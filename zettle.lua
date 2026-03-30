@@ -175,6 +175,17 @@ local function nearestFragment(bp)
     return nil
 end
 
+-- Push the current position onto the back-stack before any navigation.
+function PushBack(bp)
+    if bp.Buf.AbsPath == "" then return end
+    backStack[#backStack + 1] = {
+        path     = bp.Buf.AbsPath,
+        fragment = nearestFragment(bp),
+        x        = bp.Cursor.X,
+        y        = bp.Cursor.Y,
+    }
+end
+
 -- Open `path` (possibly relative to the current buffer) in micro or an external viewer.
 local function openPath(bp, uri)
 
@@ -228,7 +239,7 @@ local function openPath(bp, uri)
 
     if isTextFile(path) then
         -- follow wiki links
-        PushBack()
+        PushBack(bp)
         if path ~= bp.Buf.AbsPath then
             bp:HandleCommand("open " .. path)
         end
@@ -392,16 +403,8 @@ function onMousePress(bp, me)
     return false
 end
 
--- Push the current position onto the back-stack before any navigation.
-local function PushBack(bp)
-    if bp.Buf.AbsPath == "" then return end
-    local entry = bp.Buf.AbsPath
-    local frag = nearestFragment(bp)
-    if frag then entry = entry .. "#" .. frag end
-    backStack[#backStack + 1] = entry
-end
 
--- NavigateBack pops the back-stack and opens the previous file, jumping to its section.
+-- NavigateBack pops the back-stack and restores the previous file and cursor position.
 function NavigateBack(bp)
     if #backStack == 0 then
         micro.InfoBar():Message("zettle: nothing to go back to")
@@ -409,15 +412,17 @@ function NavigateBack(bp)
     end
     local prev = backStack[#backStack]
     backStack[#backStack] = nil
-    -- Split stored path#fragment and navigate.
-    local fragment
-    local hashPos = prev:find("#", 1, true)
-    if hashPos then
-        fragment = prev:sub(hashPos + 1)
-        prev     = prev:sub(1, hashPos - 1)
+    if prev.path ~= bp.Buf.AbsPath then
+        bp:HandleCommand("open " .. prev.path)
     end
-    bp:HandleCommand("open " .. prev)
-    jumpToFragment(bp, fragment)
+    local inBounds = prev.y < bp.Buf:LinesNum() and
+                     prev.x <= #bp.Buf:Line(prev.y)
+    if inBounds then
+        bp.Cursor:GotoLoc(buffer.Loc(prev.x, prev.y))
+        bp:Center()
+    else
+        jumpToFragment(bp, prev.fragment)
+    end
     return true
 end
 
