@@ -43,13 +43,21 @@ end
 
 -- Toggle the checkbox on `line` (0-based row `y` in `bp`).
 -- Returns true if a change was made.
-local function toggleTodoOnLine(bp, y, line)
+local function toggleTodoOnLine(bp, y)
+    local line = bp.Buf:Line(bp.Cursor.Y)
+    local savedX, savedY = bp.Cursor.X, bp.Cursor.Y
+
+    local function restore()
+        bp.Cursor:GotoLoc(buffer.Loc(savedX, savedY))
+    end
+
     -- Unchecked: - [ ] …
     local pos = line:find("%[ %]")
     if pos and line:match("^%s*-%s+%[ %]") then
         -- Lua pos is 1-based; buffer.Loc is 0-based.
         -- "[ ]" spans columns (pos-1)..(pos+1) inclusive; end arg to Replace is exclusive → pos+2.
         bp.Buf:Replace(buffer.Loc(pos - 1, y), buffer.Loc(pos + 2, y), "[x]")
+        restore()
         return true
     end
 
@@ -57,6 +65,7 @@ local function toggleTodoOnLine(bp, y, line)
     pos = line:find("%[x%]")
     if pos and line:match("^%s*-%s+%[x%]") then
         bp.Buf:Replace(buffer.Loc(pos - 1, y), buffer.Loc(pos + 2, y), "[ ]")
+        restore()
         return true
     end
 
@@ -109,8 +118,7 @@ local function findVaultRoot()
         local candidate = filepath.Join(dir, ".zettlr")
         local _, serr = os.Stat(candidate)
         if serr == nil then
-            zettlrRoot = dir
-            break
+            return dir
         end
         local parent = filepath.Dir(dir)
         if parent == dir then return end
@@ -118,8 +126,17 @@ local function findVaultRoot()
     end
 end
 
+-- Decode %XX percent-encoding in a URL path component.
+local function urlDecode(s)
+    return (s:gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end))
+end
+
 -- Open `path` (possibly relative to the current buffer) in micro or an external viewer.
 local function openPath(bp, path)
+    path = urlDecode(path)
+
     -- Skip external URLs silently (or show a hint in the info bar)
     if strings.HasPrefix(path, "http://")  or strings.HasPrefix(path, "https://")
     or strings.HasPrefix(path, "ftp://")   or strings.HasPrefix(path, "mailto:") then
@@ -167,11 +184,15 @@ end
 
 -- ── Exported actions ─────────────────────────────────────────────────────────
 
--- ToggleTodo toggles the TODO checkbox on the current line (any column).
+-- ToggleTodo toggles the TODO checkbox only when the cursor is within the [ ] / [x] characters.
 function ToggleTodo(bp)
     if not isMarkdown(bp) then return false end
     local line = bp.Buf:Line(bp.Cursor.Y)
-    return toggleTodoOnLine(bp, bp.Cursor.Y, line)
+    local chkPos = line:find("%[[ x]%]")
+    if not (chkPos and line:match("^%s*-%s+%[[ x]%]")) then return false end
+    -- checkbox occupies 0-based columns (chkPos-1)..(chkPos+1)
+    if bp.Cursor.X < chkPos - 1 or bp.Cursor.X > chkPos + 1 then return false end
+    return toggleTodoOnLine(bp, bp.Cursor.Y)
 end
 
 -- OpenLink follows the markdown link under the cursor, if any.
@@ -193,7 +214,12 @@ function Activate(bp)
     return OpenLink(bp)
 end
 
--- ── Mouse handler ─────────────────────────────────────────────────────────────
+
+function onSetActive(bp)
+    local path = bp.Buf.AbsPath
+    if path == nil or path == "" then return end
+    require("filemanager").goto_path(path)
+end
 
 -- onMousePress is called after micro has already moved the cursor to the
 -- clicked position, so bp.Cursor.{X,Y} reflect the click location.
@@ -202,14 +228,14 @@ function onMousePress(bp, me)
 
     local y    = bp.Cursor.Y
     local curX = bp.Cursor.X
-    local line = bp.Buf:Line(y)
+    local line = bp.Buf:Line(bp.Cursor.Y)
 
     -- 1. If the click landed on the [ ] / [x] characters, toggle the checkbox.
     local chkPos = line:find("%[[ x]%]")
     if chkPos and line:match("^%s*-%s+%[[ x]%]") then
         -- checkbox occupies 0-based columns (chkPos-1)..(chkPos+1)
         if curX >= chkPos - 1 and curX <= chkPos + 1 then
-            toggleTodoOnLine(bp, y, line)
+            toggleTodoOnLine(bp, y)
             return false
         end
     end
@@ -250,13 +276,13 @@ function preinit()
 end
 
 function init()
-    loadProjectConfig()
+    zettlrRoot = findVaultRoot()
 
-    if zettlrConfig ~= nil then
-        config.SetGlobalOption("autosave", 1)
+    if zettlrRoot ~= nil then
+        config.SetGlobalOptionNative("autosave", true)
     end
 
     -- Default keybinds; users can override in their bindings.json.
-    config.TryBindKey("Ctrl-Space", "lua:zettlr.Activate",     false)
-    config.TryBindKey("Alt-Left",   "lua:zettlr.NavigateBack", false)
+    config.TryBindKey("Enter",      "lua:zettlr.Activate|InsertNewline", false)
+    config.TryBindKey("Alt-Left",   "lua:zettlr.NavigateBack",      false)
 end

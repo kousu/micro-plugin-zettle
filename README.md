@@ -35,7 +35,7 @@ fork is used — the upstream plugin only reaches 3.4.0.
 
 | Action | Default key | Description |
 |---|---|---|
-| `Activate` | `Ctrl-Space` | Toggle the `- [ ]` item on the current line, or follow the link under the cursor |
+| `Activate` | `Enter` | Toggle the `- [ ]` item under the cursor, or follow the link under the cursor; falls through to a normal newline otherwise |
 | `ToggleTodo` | — | Toggle the `- [ ]` item only (not bound by default) |
 | `OpenLink` | — | Follow the link under the cursor only (not bound by default) |
 | `NavigateBack` | `Alt-Left` | Go back to the previously opened file |
@@ -60,6 +60,19 @@ to rebind `NavigateBack` to `Ctrl-Backspace`:
 
 The plugin uses `TryBindKey` with `overwrite = false`, so any binding already present in
 `bindings.json` takes precedence over the plugin defaults automatically.
+
+If you prefer to trigger `Activate` with `Ctrl-Space` instead of (or in addition to) `Enter`,
+add it to `bindings.json`:
+
+```json
+{
+    "Ctrl-Space": "lua:zettlr.Activate",
+    "Enter": "InsertNewline"
+}
+```
+
+Restoring `Enter` to plain `InsertNewline` is recommended when using `Ctrl-Space`,
+since the default `Enter` binding routes through `Activate` first.
 
 ## Per-project config
 
