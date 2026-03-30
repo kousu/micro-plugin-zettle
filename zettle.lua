@@ -182,6 +182,76 @@ local function openPath(bp, path)
     end
 end
 
+-- Toggle blockquote prefix on all selected lines.
+-- Inserts "> " after each line's leading whitespace, or removes it if every
+-- selected line already has it.
+local function toggleBlockquoteLines(bp)
+    local cur = bp.Cursor
+    if not cur:HasSelection() then return false end
+
+    -- CurSelection is a 2-element Go array; luar exposes it 1-indexed.
+    -- sel[1] = CurSelection[0] (SetSelectionStart), sel[2] = CurSelection[1] (SetSelectionEnd).
+    local sel = cur.CurSelection
+    local startY = sel[1].Y
+    local endY   = sel[2].Y
+    local endX   = sel[2].X
+    -- Track which sel index is the "bottom" of the selection so we can
+    -- extend it later if needed.
+    local bottomIsFirst = false
+    -- Normalize direction
+    if startY > endY or (startY == endY and sel[1].X > sel[2].X) then
+        startY, endY = endY, startY
+        endX = sel[1].X
+        bottomIsFirst = true
+    end
+    -- If selection ends at col 0 of a line, don't include that line
+    if endX == 0 and endY > startY then
+        endY = endY - 1
+    end
+
+    -- Determine whether every line is already quoted at its indent level.
+    local allQuoted = true
+    for y = startY, endY do
+        local line = bp.Buf:Line(y)
+        local indent = line:match("^(%s*)") or ""
+        local rest = line:sub(#indent + 1)
+        if not rest:match("^> ") then
+            allQuoted = false
+            break
+        end
+    end
+
+    if allQuoted then
+        -- Extend the bottom of the selection one character into the next line
+        -- before removing "> " prefixes. Without this, the deletions on the
+        -- last line pull the selection endpoint back, so a subsequent toggle
+        -- would miss that line.
+        local extended = buffer.Loc(1, endY)
+        if bottomIsFirst then
+            cur:SetSelectionStart(extended)
+        else
+            cur:SetSelectionEnd(extended)
+        end
+    end
+
+    -- Apply the toggle. Iterate bottom-up so column positions on earlier
+    -- lines aren't affected by changes to later ones (though here only
+    -- intra-line edits happen, top-down would also be fine).
+    for y = endY, startY, -1 do
+        local line = bp.Buf:Line(y)
+        local indent = line:match("^(%s*)") or ""
+        local col = #indent  -- 0-based insert/delete column
+        if allQuoted then
+            -- Remove the "> " (2 chars) that follows the indent.
+            bp.Buf:Replace(buffer.Loc(col, y), buffer.Loc(col + 2, y), "")
+        else
+            bp.Buf.EventHandler:Insert(buffer.Loc(col, y), "> ")
+        end
+    end
+
+    return true
+end
+
 -- ── Exported actions ─────────────────────────────────────────────────────────
 
 -- ToggleTodo toggles the TODO checkbox only when the cursor is within the [ ] / [x] characters.
@@ -205,6 +275,19 @@ function OpenLink(bp)
         return true
     end
     return false
+end
+
+-- ToggleBlockquote wraps/unwraps the selected lines as a blockquote.
+-- When there is no selection (or not in a markdown buffer), falls back to
+-- inserting a literal ">" character.
+function ToggleBlockquote(bp)
+    if isMarkdown(bp) and bp.Cursor:HasSelection() then
+        return toggleBlockquoteLines(bp)
+    end
+    -- Fallback: insert the character normally.
+    bp.Buf.EventHandler:Insert(buffer.Loc(bp.Cursor.X, bp.Cursor.Y), ">")
+    bp.Cursor:GotoLoc(buffer.Loc(bp.Cursor.X + 1, bp.Cursor.Y))
+    return true
 end
 
 -- Activate tries ToggleTodo first, then OpenLink.
@@ -284,5 +367,6 @@ function init()
 
     -- Default keybinds; users can override in their bindings.json.
     config.TryBindKey("Enter",      "lua:zettle.Activate|InsertNewline", false)
+    config.TryBindKey(">",          "lua:zettle.ToggleBlockquote", false)
     config.TryBindKey("Alt-Left",   "lua:zettle.NavigateBack",      false)
 end
