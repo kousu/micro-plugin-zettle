@@ -8,7 +8,8 @@
       "Version": "1.0.0",
       "Url": "https://github.com/kousu/micro-zettlr/archive/v1.0.0.zip",
       "Require": {
-        "micro": ">=2.0.0"
+        "micro": ">=2.0.0",
+        "filemanager": ">=3.5.0"
       }
     }
   ]

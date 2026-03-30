@@ -3,6 +3,21 @@
 A plugin for [micro](https://micro-editor.github.io/) adding wiki features
 ([Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten)).
 
+## Installation
+
+This plugin depends on [a fork of filemanager](https://github.com/kousu/micro-plugin-filemanager)
+(version ≥ 3.5.0), which is not in the official plugin channel. Register it first,
+then install both plugins:
+
+```sh
+micro -options pluginrepos=https://raw.githubusercontent.com/kousu/micro-plugin-filemanager/master/repo.json
+micro -plugin install filemanager
+micro -plugin install zettlr
+```
+
+The version constraint in `repo.json` (`"filemanager": ">=3.5.0"`) ensures the
+fork is used — the upstream plugin only reaches 3.4.0.
+
 ## Keybindings
 
 | Action | Default key | Description |
