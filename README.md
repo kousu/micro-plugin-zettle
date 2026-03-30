@@ -3,6 +3,19 @@
 A plugin for [micro](https://micro-editor.github.io/) adding wiki features
 ([Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten)).
 
+## Development
+
+Clone the repo and symlink it into micro's plugin directory under the plugin's name:
+
+```sh
+git clone https://github.com/kousu/micro-plugin-zettlr
+ln -s "$PWD/micro-plugin-zettlr" ~/.config/micro/plug/zettlr
+```
+
+micro loads plugins from `~/.config/micro/plug/` at startup, so changes to the
+working copy take effect the next time micro is launched (or after `> reload` in
+an existing session).
+
 ## Installation
 
 This plugin depends on [a fork of filemanager](https://github.com/kousu/micro-plugin-filemanager)
