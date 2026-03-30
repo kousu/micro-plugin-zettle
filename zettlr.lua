@@ -96,28 +96,26 @@ local backStack = {}
 -- Project config loaded from .zettlr.json in the working directory.
 -- nil  → file not found (no project config).
 -- table → file was found; contains parsed settings (or {} if parse failed).
-local zettlrConfig = nil
+local zettlrRoot = nil
 
--- Read and (TODO: properly parse) .zettlr.json from the current working directory.
-local function loadProjectConfig()
+-- Read and parse .zettlr.json by walking up from the cwd.
+local function findVaultRoot()
     local cwd, err = os.Getwd()
     if err ~= nil then return end
 
-    local configPath = filepath.Join(cwd, ".zettlr.json")
-    local _, err = os.Stat(configPath)
-    if err ~= nil then return end  -- file not found; leave zettlrConfig = nil
-
-    local data, err = ioutil.ReadFile(configPath)
-    if err ~= nil then
-        -- Unreadable — treat as empty config so autosave still activates.
-        zettlrConfig = {}
-        return
+    -- Walk up the directory tree until we find .zettlr.json or hit the root.
+    local dir = cwd
+    while true do
+        local candidate = filepath.Join(dir, ".zettlr")
+        local _, serr = os.Stat(candidate)
+        if serr == nil then
+            zettlrRoot = dir
+            break
+        end
+        local parent = filepath.Dir(dir)
+        if parent == dir then return end
+        dir = parent
     end
-
-    -- Store the raw file contents for future JSON parsing.
-    -- TODO: parse into a proper Lua table keyed by option name.
-    local _raw = fmt.Sprintf("%s", data)
-    zettlrConfig = {}
 end
 
 -- Open `path` (possibly relative to the current buffer) in micro or an external viewer.
