@@ -32,3 +32,18 @@ to rebind `NavigateBack` to `Ctrl-Backspace`:
 
 The plugin uses `TryBindKey` with `overwrite = false`, so any binding already present in
 `bindings.json` takes precedence over the plugin defaults automatically.
+
+## Per-project config
+
+Drop a `.zettlr.json` file in your notes folder to enable project-specific behaviour.
+Currently the only effect of the file's presence is enabling **autosave** for that session —
+useful for Obsidian-style journalling where you want edits saved automatically:
+
+```sh
+echo '{}' > ~/notes/.zettlr.json
+micro ~/notes/
+```
+
+micro will detect `.zettlr.json` in its working directory on startup and call
+`set autosave 1` automatically. If the file exists but cannot be parsed as JSON the
+plugin treats it as `{}` and still enables autosave.

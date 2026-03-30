@@ -4,6 +4,8 @@ local micro    = import("micro")
 local buffer   = import("micro/buffer")
 local config   = import("micro/config")
 local shell    = import("micro/shell")
+local fmt      = import("fmt")
+local ioutil   = import("io/ioutil")
 local os       = import("os")
 local runtime  = import("runtime")
 local filepath = import("filepath")
@@ -90,6 +92,33 @@ end
 
 -- Navigation back-stack: each entry is an absolute file path.
 local backStack = {}
+
+-- Project config loaded from .zettlr.json in the working directory.
+-- nil  → file not found (no project config).
+-- table → file was found; contains parsed settings (or {} if parse failed).
+local zettlrConfig = nil
+
+-- Read and (TODO: properly parse) .zettlr.json from the current working directory.
+local function loadProjectConfig()
+    local cwd, err = os.Getwd()
+    if err ~= nil then return end
+
+    local configPath = filepath.Join(cwd, ".zettlr.json")
+    local _, err = os.Stat(configPath)
+    if err ~= nil then return end  -- file not found; leave zettlrConfig = nil
+
+    local data, err = ioutil.ReadFile(configPath)
+    if err ~= nil then
+        -- Unreadable — treat as empty config so autosave still activates.
+        zettlrConfig = {}
+        return
+    end
+
+    -- Store the raw file contents for future JSON parsing.
+    -- TODO: parse into a proper Lua table keyed by option name.
+    local _raw = fmt.Sprintf("%s", data)
+    zettlrConfig = {}
+end
 
 -- Open `path` (possibly relative to the current buffer) in micro or an external viewer.
 local function openPath(bp, path)
@@ -210,7 +239,25 @@ end
 
 -- ── Initialisation ────────────────────────────────────────────────────────────
 
+-- preinit runs before any plugin's init(), so we pre-populate GlobalSettings with
+-- filemanager.openonstart=false before filemanager's init() registers it.
+-- RegisterCommonOption only writes the default when the key is absent, so our value wins.
+-- SetGlobalOptionNative is used because the option isn't registered yet at this point.
+function preinit()
+    -- Default to keeping the file tree closed, but respect an explicit user setting
+    -- in settings.json (which is loaded into GlobalSettings before preinit runs).
+    if config.GetGlobalOption("filemanager.openonstart") == nil then
+        config.SetGlobalOptionNative("filemanager.openonstart", false)
+    end
+end
+
 function init()
+    loadProjectConfig()
+
+    if zettlrConfig ~= nil then
+        config.SetGlobalOption("autosave", 1)
+    end
+
     -- Default keybinds; users can override in their bindings.json.
     config.TryBindKey("Ctrl-Space", "lua:zettlr.Activate",     false)
     config.TryBindKey("Alt-Left",   "lua:zettlr.NavigateBack", false)
