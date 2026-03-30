@@ -1,15 +1,15 @@
 [{
   "Name": "zettlr",
-  "Description": "Markdown note-taking helpers: toggle TODO checkboxes with mouse or Ctrl-Space, open local links by clicking them.",
+  "Description": "Markdown-based wiki in Micro.",
   "Website": "https://github.com/kousu/micro-zettlr",
   "Tags": ["markdown", "todo", "links", "notes"],
   "Versions": [
     {
-      "Version": "1.0.0",
-      "Url": "https://github.com/kousu/micro-zettlr/archive/v1.0.0.zip",
+      "Version": "0.0.1",
+      "Url": "https://github.com/kousu/micro-plugin-zettlr/archive/v0.0.1.zip",
       "Require": {
         "micro": ">=2.0.0",
-        "filemanager": ">=3.5.0"
+        "filemanager": ">=3.6.0"
       }
     }
   ]
