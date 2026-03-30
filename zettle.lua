@@ -102,20 +102,20 @@ end
 -- Navigation back-stack: each entry is an absolute file path.
 local backStack = {}
 
--- Project config loaded from .zettlr.json in the working directory.
+-- Project config loaded from .zettle.json in the working directory.
 -- nil  → file not found (no project config).
 -- table → file was found; contains parsed settings (or {} if parse failed).
-local zettlrRoot = nil
+local zettleRoot = nil
 
--- Read and parse .zettlr.json by walking up from the cwd.
+-- Read and parse .zettle.json by walking up from the cwd.
 local function findVaultRoot()
     local cwd, err = os.Getwd()
     if err ~= nil then return end
 
-    -- Walk up the directory tree until we find .zettlr.json or hit the root.
+    -- Walk up the directory tree until we find .zettle.json or hit the root.
     local dir = cwd
     while true do
-        local candidate = filepath.Join(dir, ".zettlr")
+        local candidate = filepath.Join(dir, ".zettle")
         local _, serr = os.Stat(candidate)
         if serr == nil then
             return dir
@@ -252,7 +252,7 @@ end
 -- NavigateBack pops the back-stack and opens the previous file.
 function NavigateBack(bp)
     if #backStack == 0 then
-        micro.InfoBar():Message("zettlr: nothing to go back to")
+        micro.InfoBar():Message("zettle: nothing to go back to")
         return false
     end
     local prev = backStack[#backStack]
@@ -276,13 +276,13 @@ function preinit()
 end
 
 function init()
-    zettlrRoot = findVaultRoot()
+    zettleRoot = findVaultRoot()
 
-    if zettlrRoot ~= nil then
+    if zettleRoot ~= nil then
         config.SetGlobalOptionNative("autosave", true)
     end
 
     -- Default keybinds; users can override in their bindings.json.
-    config.TryBindKey("Enter",      "lua:zettlr.Activate|InsertNewline", false)
-    config.TryBindKey("Alt-Left",   "lua:zettlr.NavigateBack",      false)
+    config.TryBindKey("Enter",      "lua:zettle.Activate|InsertNewline", false)
+    config.TryBindKey("Alt-Left",   "lua:zettle.NavigateBack",      false)
 end

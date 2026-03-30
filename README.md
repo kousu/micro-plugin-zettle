@@ -1,4 +1,4 @@
-# micro-zettlr
+# micro-zettle
 
 A plugin for [micro](https://micro-editor.github.io/) adding wiki features
 ([Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten)).
@@ -9,7 +9,7 @@ Clone the repo and symlink it into micro's plugin directory under the plugin's n
 
 ```sh
 git clone https://github.com/kousu/micro-plugin-zettlr
-ln -s "$PWD/micro-plugin-zettlr" ~/.config/micro/plug/zettlr
+ln -s "$PWD/micro-plugin-zettlr" ~/.config/micro/plug/zettle
 ```
 
 micro loads plugins from `~/.config/micro/plug/` at startup, so changes to the
@@ -25,7 +25,7 @@ then install both plugins:
 ```sh
 micro -options pluginrepos=https://raw.githubusercontent.com/kousu/micro-plugin-filemanager/master/repo.json
 micro -plugin install filemanager
-micro -plugin install zettlr
+micro -plugin install zettle
 ```
 
 The version constraint in `repo.json` (`"filemanager": ">=3.5.0"`) ensures the
@@ -54,7 +54,7 @@ to rebind `NavigateBack` to `Ctrl-Backspace`:
 
 ```json
 {
-    "Ctrl-Backspace": "lua:zettlr.NavigateBack"
+    "Ctrl-Backspace": "lua:zettle.NavigateBack"
 }
 ```
 
@@ -66,7 +66,7 @@ add it to `bindings.json`:
 
 ```json
 {
-    "Ctrl-Space": "lua:zettlr.Activate",
+    "Ctrl-Space": "lua:zettle.Activate",
     "Enter": "InsertNewline"
 }
 ```
@@ -76,15 +76,15 @@ since the default `Enter` binding routes through `Activate` first.
 
 ## Per-project config
 
-Drop a `.zettlr.json` file in your notes folder to enable project-specific behaviour.
+Drop a `.zettle.json` file in your notes folder to enable project-specific behaviour.
 Currently the only effect of the file's presence is enabling **autosave** for that session —
 useful for Obsidian-style journalling where you want edits saved automatically:
 
 ```sh
-echo '{}' > ~/notes/.zettlr.json
+echo '{}' > ~/notes/.zettle.json
 micro ~/notes/
 ```
 
-micro will detect `.zettlr.json` in its working directory on startup and call
+micro will detect `.zettle.json` in its working directory on startup and call
 `set autosave 1` automatically. If the file exists but cannot be parsed as JSON the
 plugin treats it as `{}` and still enables autosave.

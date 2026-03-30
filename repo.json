@@ -1,12 +1,12 @@
 [{
-  "Name": "zettlr",
+  "Name": "zettle",
   "Description": "Markdown-based wiki in Micro.",
-  "Website": "https://github.com/kousu/micro-zettlr",
+  "Website": "https://github.com/kousu/micro-zettle",
   "Tags": ["markdown", "todo", "links", "notes"],
   "Versions": [
     {
       "Version": "0.0.1",
-      "Url": "https://github.com/kousu/micro-plugin-zettlr/archive/v0.0.1.zip",
+      "Url": "https://github.com/kousu/micro-plugin-zettle/archive/v0.0.1.zip",
       "Require": {
         "micro": ">=2.0.0",
         "filemanager": ">=3.6.0"
