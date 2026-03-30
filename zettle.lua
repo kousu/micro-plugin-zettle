@@ -432,12 +432,17 @@ end
 
 function init()
     zettleRoot = findVaultRoot()
-
     if zettleRoot ~= nil then
-        config.SetGlobalOptionNative("autosave", true)
         micro.Log("zettle vault: " .. zettleRoot)
         micro.InfoBar():Message("zettle vault: " .. zettleRoot)
         micro.After(5 * time.Second, function() micro.InfoBar():Reset() end)
+
+        -- Enable autosaving.
+        -- Setting this deadlocks if called too early but a delay to let micro
+        -- boot, avoids it. (XXX perhaps a bug to report?)
+        micro.After(1*time.Second, function()
+            config.SetGlobalOption("autosave", "15")
+        end)
     end
 
     -- Default keybinds; users can override in their bindings.json.
