@@ -231,6 +231,7 @@ local function openPath(bp, uri)
     end
 
     -- Verify the file exists.
+    -- XXX should we only allow opening files *within the vault*? is it a security problem otherwise?
     local _, err = os.Stat(path)
     if err ~= nil then
         micro.InfoBar():Error("File not found: " .. path)
@@ -368,11 +369,25 @@ function Activate(bp)
     return OpenLink(bp)
 end
 
+local function syncBufPane(bp)
+    if bp.Buf.Type.Scratch then return end
+    local absPath = bp.Buf.AbsPath
+    if absPath == nil or absPath == "" then return end
+
+    require("filemanager").Focus(absPath)
+    if zettleRoot ~= nil then
+        bp.Buf.Path = filepath.Rel(zettleRoot, absPath)
+    end
+end
+
+function onBufPaneOpen(bp)
+    syncBufPane(bp)
+end
 
 function onSetActive(bp)
-    local path = bp.Buf.AbsPath
-    if path == nil or path == "" then return end
-    require("filemanager").goto_path(path)
+    -- micro:Log("onSetActive")
+    -- this runs when a pane is *switched* including when the filemanager is opened/closed
+    syncBufPane(bp)
 end
 
 -- onMousePress is called after micro has already moved the cursor to the
@@ -441,11 +456,15 @@ function preinit()
 end
 
 function init()
+
     zettleRoot = findVaultRoot()
     if zettleRoot ~= nil then
         micro.Log("zettle vault: " .. zettleRoot)
         micro.InfoBar():Message("zettle vault: " .. zettleRoot)
         micro.After(5 * time.Second, function() micro.InfoBar():Reset() end)
+
+        os.Chdir(zettleRoot)
+        require("filemanager").update_current_dir(zettleRoot)
 
         -- Enable autosaving.
         -- Setting this deadlocks if called too early but a delay to let micro
