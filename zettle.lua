@@ -133,9 +133,50 @@ local function urlDecode(s)
     end))
 end
 
+-- Convert a markdown header line to its GitHub-style anchor slug.
+-- e.g. "## Guide to Your New Life!" → "guide-to-your-new-life"
+local function headerToAnchor(line)
+    -- Strip leading #'s and surrounding whitespace
+    local text = line:match("^#+%s+(.-)%s*$") or line
+    text = text:lower()
+    -- Remove anything that isn't alphanumeric, space, or hyphen
+    text = text:gsub("[^%w%s%-]", "")
+    -- Collapse spaces/runs to a single hyphen
+    text = text:gsub("%s+", "-")
+    return text
+end
+
+-- Jump bp's cursor to the first header whose anchor matches `fragment`.
+local function jumpToFragment(bp, fragment)
+    if not fragment or fragment == "" then return end
+    for y = 0, bp.Buf:LinesNum() - 1 do
+        local line = bp.Buf:Line(y)
+        if line:match("^#+%s") and headerToAnchor(line) == fragment then
+            bp.Cursor:GotoLoc(buffer.Loc(0, y))
+            bp:Center()
+            return
+        end
+    end
+    micro.InfoBar():Message("Section not found: #" .. fragment)
+end
+
 -- Open `path` (possibly relative to the current buffer) in micro or an external viewer.
 local function openPath(bp, path)
     path = urlDecode(path)
+
+    -- Split off a #fragment before any other processing.
+    local fragment
+    local hashPos = path:find("#", 1, true)
+    if hashPos then
+        fragment = path:sub(hashPos + 1)
+        path     = path:sub(1, hashPos - 1)
+    end
+
+    -- A bare #fragment with no file path means jump within the current buffer.
+    if path == "" then
+        jumpToFragment(bp, fragment)
+        return
+    end
 
     -- Skip external URLs silently (or show a hint in the info bar)
     if strings.HasPrefix(path, "http://")  or strings.HasPrefix(path, "https://")
@@ -171,8 +212,10 @@ local function openPath(bp, path)
             backStack[#backStack + 1] = bp.Buf.AbsPath
         end
         bp:HandleCommand("open " .. absPath)
+        -- After open, bp.Buf is the new buffer; jump to the fragment if any.
+        jumpToFragment(bp, fragment)
     else
-        -- Open with the system viewer.
+        -- Open with the system viewer (fragments not applicable).
         local goos = runtime.GOOS
         if goos == "darwin" then
             shell.ExecCommand("open", absPath)
