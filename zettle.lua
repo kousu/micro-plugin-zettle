@@ -6,6 +6,7 @@ local config   = import("micro/config")
 local shell    = import("micro/shell")
 local fmt      = import("fmt")
 local ioutil   = import("io/ioutil")
+local time     = import("time")
 local os       = import("os")
 local runtime  = import("runtime")
 local filepath = import("filepath")
@@ -102,20 +103,22 @@ end
 -- Navigation back-stack: each entry is an absolute file path.
 local backStack = {}
 
--- Project config loaded from .zettle.json in the working directory.
--- nil  → file not found (no project config).
--- table → file was found; contains parsed settings (or {} if parse failed).
+-- Root of the wiki: wherever the nearest .zettle file is
+-- (some features still work without finding this)
 local zettleRoot = nil
 
--- Read and parse .zettle.json by walking up from the cwd.
 local function findVaultRoot()
     local cwd, err = os.Getwd()
-    if err ~= nil then return end
+    if err ~= nil then
+        micro.InfoBar():Error("Finding zettle root: " .. tostring(err))
+        return
+    end
 
-    -- Walk up the directory tree until we find .zettle.json or hit the root.
+    -- Walk up the directory tree
     local dir = cwd
     while true do
         local candidate = filepath.Join(dir, ".zettle")
+        micro:Log("Checking for .zettle in " .. candidate)
         local _, serr = os.Stat(candidate)
         if serr == nil then
             return dir
@@ -432,10 +435,15 @@ function init()
 
     if zettleRoot ~= nil then
         config.SetGlobalOptionNative("autosave", true)
+        micro.Log("zettle vault: " .. zettleRoot)
+        micro.InfoBar():Message("zettle vault: " .. zettleRoot)
+        micro.After(5 * time.Second, function() micro.InfoBar():Reset() end)
     end
 
     -- Default keybinds; users can override in their bindings.json.
+    -- Markdown features
     config.TryBindKey("Enter",      "lua:zettle.Activate|InsertNewline", false)
     config.TryBindKey(">",          "lua:zettle.ToggleBlockquote", false)
+    -- Wiki features
     config.TryBindKey("Alt-Left",   "lua:zettle.NavigateBack",      false)
 end
