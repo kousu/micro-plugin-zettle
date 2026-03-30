@@ -100,7 +100,7 @@ local function linkPathAtCol(line, curX)
     return nil
 end
 
--- Navigation back-stack: each entry is an absolute file path.
+-- Navigation back-stack: each entry is an absolute file path with optional #fragment.
 local backStack = {}
 
 -- Root of the wiki: wherever the nearest .zettle file is
@@ -149,6 +149,7 @@ local function headerToAnchor(line)
     return text
 end
 
+
 -- Jump bp's cursor to the first header whose anchor matches `fragment`.
 local function jumpToFragment(bp, fragment)
     if not fragment or fragment == "" then return end
@@ -175,22 +176,7 @@ local function nearestFragment(bp)
 end
 
 -- Open `path` (possibly relative to the current buffer) in micro or an external viewer.
-local function openPath(bp, path)
-    path = urlDecode(path)
-
-    -- Split off a #fragment before any other processing.
-    local fragment
-    local hashPos = path:find("#", 1, true)
-    if hashPos then
-        fragment = path:sub(hashPos + 1)
-        path     = path:sub(1, hashPos - 1)
-    end
-
-    -- A bare #fragment with no file path means jump within the current buffer.
-    if path == "" then
-        jumpToFragment(bp, fragment)
-        return
-    end
+local function openPath(bp, uri)
 
     -- Open a URI or file path with the OS default handler (non-blocking).
     local function openWithSystem(uri)
@@ -203,46 +189,56 @@ local function openPath(bp, path)
     end
 
     -- Anything containing a scheme ("word://..." or "mailto:...") goes to the
-    -- system viewer rather than being treated as a file path.
-    if path:match("^[%a][%a%d+%-%.]*://") or path:match("^mailto:") then
-        openWithSystem(path)
+    -- system viewer rather than being treated as an internal file path.
+    -- (this *includes* file:// links -- those will open with the system viewer)
+    if uri:match("^[%a][%a%d+%-%.]*://") or uri:match("^mailto:") then
+        openWithSystem(uri)
         return
     end
 
-    -- Resolve path relative to the buffer's own directory.
-    local absPath
-    if strings.HasPrefix(path, "/") then
-        absPath = path
+    -- Anything else we assume is a file path
+    path = urlDecode(uri)
+
+    -- Split off a #fragment before any other processing.
+    local fragment
+    local hashPos = path:find("#", 1, true)
+    if hashPos then
+        fragment = path:sub(hashPos + 1)
+        path     = path:sub(1, hashPos - 1)
+    end
+
+    if path == "" then
+        -- A bare #fragment with no file path means jump within the current buffer.
+        path = bp.Buf.AbsPath
     else
-        local bufDir
-        if bp.Buf.AbsPath ~= "" then
-            bufDir = filepath.Dir(bp.Buf.AbsPath)
-        else
-            bufDir, _ = os.Getwd()
-        end
-        absPath = filepath.Join(bufDir, path)
+        -- resolve path relative to the open buffer
+        -- micro:Log("bp.Buf.AbsPath = " .. bp.Buf.AbsPath)
+        -- micro:Log("path = " .. path)
+        -- micro:Log("filepath.Dir(bp.Buf.AbsPath) = " .. filepath.Dir(bp.Buf.AbsPath))
+        path = filepath.Join(filepath.Dir(bp.Buf.AbsPath), path)
+        -- micro:Log("edited path = " .. path)
     end
 
     -- Verify the file exists.
-    local _, err = os.Stat(absPath)
+    local _, err = os.Stat(path)
     if err ~= nil then
-        micro.InfoBar():Error("File not found: " .. absPath)
+        micro.InfoBar():Error("File not found: " .. path)
         return
     end
 
-    if isTextFile(absPath) then
-        -- Push the current file (with section fragment) onto the back-stack.
-        if bp.Buf.AbsPath ~= "" then
-            local entry = bp.Buf.AbsPath
-            local frag = nearestFragment(bp)
-            if frag then entry = entry .. "#" .. frag end
-            backStack[#backStack + 1] = entry
+    if isTextFile(path) then
+        -- follow wiki links
+        PushBack()
+        if path ~= bp.Buf.AbsPath then
+            bp:HandleCommand("open " .. path)
         end
-        bp:HandleCommand("open " .. absPath)
-        -- After open, bp.Buf is the new buffer; jump to the fragment if any.
-        jumpToFragment(bp, fragment)
+        if fragment and fragment ~= "" then
+            jumpToFragment(bp, fragment)
+        end
     else
-        openWithSystem(absPath)
+        -- open
+        -- TODO: can this be refactored to be combined with the URI case?
+        openWithSystem(path)
     end
 end
 
@@ -394,6 +390,15 @@ function onMousePress(bp, me)
     end
 
     return false
+end
+
+-- Push the current position onto the back-stack before any navigation.
+local function PushBack(bp)
+    if bp.Buf.AbsPath == "" then return end
+    local entry = bp.Buf.AbsPath
+    local frag = nearestFragment(bp)
+    if frag then entry = entry .. "#" .. frag end
+    backStack[#backStack + 1] = entry
 end
 
 -- NavigateBack pops the back-stack and opens the previous file, jumping to its section.
