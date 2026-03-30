@@ -178,10 +178,20 @@ local function openPath(bp, path)
         return
     end
 
-    -- Skip external URLs silently (or show a hint in the info bar)
-    if strings.HasPrefix(path, "http://")  or strings.HasPrefix(path, "https://")
-    or strings.HasPrefix(path, "ftp://")   or strings.HasPrefix(path, "mailto:") then
-        micro.InfoBar():Message("URL link (not opening in editor): " .. path)
+    -- Open a URI or file path with the OS default handler (non-blocking).
+    local function openWithSystem(uri)
+        local time = import("time")
+        micro.InfoBar():Message("Opening: " .. uri)
+        local cmd = runtime.GOOS == "darwin" and "open" or "xdg-open"
+        local noop = function() end
+        shell.JobSpawn(cmd, {uri}, noop, noop, noop)
+        micro.After(3 * time.Second, function() micro.InfoBar():Reset() end)
+    end
+
+    -- Anything containing a scheme ("word://..." or "mailto:...") goes to the
+    -- system viewer rather than being treated as a file path.
+    if path:match("^[%a][%a%d+%-%.]*://") or path:match("^mailto:") then
+        openWithSystem(path)
         return
     end
 
@@ -215,13 +225,7 @@ local function openPath(bp, path)
         -- After open, bp.Buf is the new buffer; jump to the fragment if any.
         jumpToFragment(bp, fragment)
     else
-        -- Open with the system viewer (fragments not applicable).
-        local goos = runtime.GOOS
-        if goos == "darwin" then
-            shell.ExecCommand("open", absPath)
-        else
-            shell.ExecCommand("xdg-open", absPath)
-        end
+        openWithSystem(absPath)
     end
 end
 
