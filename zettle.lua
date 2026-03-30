@@ -160,6 +160,17 @@ local function jumpToFragment(bp, fragment)
     micro.InfoBar():Message("Section not found: #" .. fragment)
 end
 
+-- Return the anchor slug of the nearest markdown header at or above the cursor, or nil.
+local function nearestFragment(bp)
+    for y = bp.Cursor.Y, 0, -1 do
+        local line = bp.Buf:Line(y)
+        if line:match("^#+%s") then
+            return headerToAnchor(line)
+        end
+    end
+    return nil
+end
+
 -- Open `path` (possibly relative to the current buffer) in micro or an external viewer.
 local function openPath(bp, path)
     path = urlDecode(path)
@@ -217,9 +228,12 @@ local function openPath(bp, path)
     end
 
     if isTextFile(absPath) then
-        -- Push the current file onto the back-stack before navigating.
+        -- Push the current file (with section fragment) onto the back-stack.
         if bp.Buf.AbsPath ~= "" then
-            backStack[#backStack + 1] = bp.Buf.AbsPath
+            local entry = bp.Buf.AbsPath
+            local frag = nearestFragment(bp)
+            if frag then entry = entry .. "#" .. frag end
+            backStack[#backStack + 1] = entry
         end
         bp:HandleCommand("open " .. absPath)
         -- After open, bp.Buf is the new buffer; jump to the fragment if any.
@@ -379,7 +393,7 @@ function onMousePress(bp, me)
     return false
 end
 
--- NavigateBack pops the back-stack and opens the previous file.
+-- NavigateBack pops the back-stack and opens the previous file, jumping to its section.
 function NavigateBack(bp)
     if #backStack == 0 then
         micro.InfoBar():Message("zettle: nothing to go back to")
@@ -387,7 +401,15 @@ function NavigateBack(bp)
     end
     local prev = backStack[#backStack]
     backStack[#backStack] = nil
+    -- Split stored path#fragment and navigate.
+    local fragment
+    local hashPos = prev:find("#", 1, true)
+    if hashPos then
+        fragment = prev:sub(hashPos + 1)
+        prev     = prev:sub(1, hashPos - 1)
+    end
     bp:HandleCommand("open " .. prev)
+    jumpToFragment(bp, fragment)
     return true
 end
 
