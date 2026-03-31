@@ -3,24 +3,10 @@
 A plugin for [micro](https://micro-editor.github.io/) adding wiki features
 ([Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten)).
 
-## Development
-
-Clone the repo and symlink it into micro's plugin directory under the plugin's name:
-
-```sh
-git clone https://github.com/kousu/micro-plugin-zettlr
-ln -s "$PWD/micro-plugin-zettlr" ~/.config/micro/plug/zettle
-```
-
-micro loads plugins from `~/.config/micro/plug/` at startup, so changes to the
-working copy take effect the next time micro is launched (or after `> reload` in
-an existing session).
 
 ## Installation
 
-This plugin depends on [a fork of filemanager](https://github.com/kousu/micro-plugin-filemanager)
-(version ≥ 3.5.0), which is not in the official plugin channel. Register it first,
-then install both plugins:
+This plugin depends on [a fork of filemanager](https://github.com/kousu/micro-plugin-filemanager) which is not in the official plugin channel. Register it first, then install both plugins:
 
 ```sh
 micro -options pluginrepos=https://raw.githubusercontent.com/kousu/micro-plugin-filemanager/master/repo.json
@@ -28,24 +14,35 @@ micro -plugin install filemanager
 micro -plugin install zettle
 ```
 
-The version constraint in `repo.json` (`"filemanager": ">=3.5.0"`) ensures the
-fork is used — the upstream plugin only reaches 3.4.0.
+## Vaults
+
+Mark a project folder as a wiki with
+
+```
+touch .zettle
+```
+
+This will
+
+- initialize `micro`'s working directory to that folder
+- root the file manager (`Ctrl-e tree`) at that folder
+- enable **autosave**
+- ... {not yet defined} ...
+
+Even without this this plugin adds the Markdown-friendly features.
 
 ## Keybindings
 
 | Action | Default key | Description |
 |---|---|---|
-| `Activate` | `Enter` | Toggle the `- [ ]` item under the cursor, or follow the link under the cursor; falls through to a normal newline otherwise |
-| `ToggleTodo` | — | Toggle the `- [ ]` item only (not bound by default) |
-| `OpenLink` | — | Follow the link under the cursor only (not bound by default) |
+| `Activate` | `Enter`, mouse click | Follow links; Toggle `- [ ]` checkboxes |
+| `ToggleTodo` | (none) | Toggle `- [ ]` checkboxes  |
+| `OpenLink` | (none) | Follow links |
 | `NavigateBack` | `Alt-Left` | Go back to the previously opened file |
+| `ToggleBlockquote` | `>` | Add or remove "> " to every selected line |
+| `PreviewMarkdown` | `Ctrl-P` | Render the current document with `glow`; press `q` to return [^wysiwyg] |
 
-Clicking the `[ ]` or `[x]` checkbox on a TODO line with the mouse also toggles it.
-Clicking a `[text](./path)` link opens the linked file (or external app for non-text files).
-
-`Activate` tries `ToggleTodo` first; if the cursor is not on a checkbox it falls through to
-`OpenLink`. `ToggleTodo` and `OpenLink` are exposed separately so they can be bound
-independently if preferred.
+[^wysiwyg]: I would actually like to do mixed-mode WYSIWYG rendering like Zettlr, where everything is pretty except when you're editing it, and then you see the code.
 
 ### Changing keybindings
 
@@ -74,17 +71,21 @@ add it to `bindings.json`:
 Restoring `Enter` to plain `InsertNewline` is recommended when using `Ctrl-Space`,
 since the default `Enter` binding routes through `Activate` first.
 
-## Per-project config
+## Development
 
-Drop a `.zettle.json` file in your notes folder to enable project-specific behaviour.
-Currently the only effect of the file's presence is enabling **autosave** for that session —
-useful for Obsidian-style journalling where you want edits saved automatically:
+Clone the repo and symlink it into micro's plugin directory under the plugin's name:
 
 ```sh
-echo '{}' > ~/notes/.zettle.json
-micro ~/notes/
+git clone https://github.com/kousu/micro-plugin-zettle
+ln -s "$PWD/micro-plugin-zettle" ~/.config/micro/plug/zettle
 ```
 
-micro will detect `.zettle.json` in its working directory on startup and call
-`set autosave 1` automatically. If the file exists but cannot be parsed as JSON the
-plugin treats it as `{}` and still enables autosave.
+There's a good chance, at this stage, that you will need to edit the filemanager plugin too:
+
+```sh
+git clone https://github.com/kousu/micro-plugin-filemananger
+ln -s "$PWD/micro-plugin-filemanager" ~/.config/micro/plug/filemanager
+```
+
+micro loads plugins from `~/.config/micro/plug/` at startup, so changes to the
+working copy take effect on next launch (or after `> reload` in an existing session).
