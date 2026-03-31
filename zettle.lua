@@ -72,7 +72,24 @@ local IMAGE_EXTENSIONS = {
 	tif = true,
 	ico = true,
 	avif = true,
+	-- video formats; handled the same:
+	mp4 = true,
+	webm = true,
+	avi = true,
+	mov = true,
+	m4a = true,
 }
+
+-- Convert a Go []byte userdata to a Lua string.
+local function goBytes(b)
+	-- there's an asymmetry: writing lua strings to go is just assinging to them
+	-- but reading go strings in lua requires this?? XXX
+	local chars = {}
+	for i = 1, #b do
+		chars[i] = string.char(b[i])
+	end
+	return table.concat(chars)
+end
 
 local function shellquote(s)
 	return "'" .. s:gsub("'", "'\\''") .. "'"
@@ -105,9 +122,16 @@ local function headerToAnchor(line)
 	return text
 end
 
--- Returns true when the buffer is a markdown file.
-local function isMarkdown(bp)
-	local ft = bp.Buf.Settings["filetype"]
+-- Returns true when the bufpane or buffer inside the pane is a markdown file.
+local function isMarkdown(buf)
+	if buf == nil then
+		return false
+	end
+	if buf.Buf ~= nil then
+		-- it was actually a BufPane
+		buf = buf.Buf
+	end
+	local ft = buf.Settings["filetype"]
 	return ft == "markdown"
 end
 
@@ -452,63 +476,124 @@ local function copyFile(src, dst)
 	return nil
 end
 
--- prePaste intercepts pastes of image file paths: copies the image into the
--- current buffer's directory and inserts a markdown image link instead.
-function prePaste(bp)
-	if not isMarkdown(bp) then
-		return true
-	end
-
-	local clip = readClipboard()
+local function try_paste_image(baseDir, clip)
 	if clip == nil or clip == "" then
-		return true
+		-- micro:Log("zettle: empty clipboard ")
+		return
 	end
 
 	-- Must look like a file path (no newlines, no URL scheme)
 	if clip:find("\n") then
-		return true
+		-- micro:Log("zettle: clipboard contains newlines ")
+		return
 	end
 	if clip:match("^[%a][%a%d+%-%.]*://") then
-		return true
+		-- micro:Log("zettle: clipboard is a uri")
+		return
 	end
 
 	-- Check extension
 	local ext = clip:match("%.([^%.%s]+)$")
 	if not ext or not IMAGE_EXTENSIONS[ext:lower()] then
-		return true
+		-- micro:Log("zettle: extension not an image: " .. tostring(ext))
+		return
 	end
+	-- micro:Log("zettle: copy has image extension " .. ext)
 
 	-- Verify the file exists
 	local _, serr = os.Stat(clip)
 	if serr ~= nil then
-		return true
+		micro.InfoBar():Error("zettle: " .. clip .. ": " .. serr.Error())
+		micro:Log("zettle: " .. clip .. ": " .. serr.Error())
+		return
 	end
 
 	-- Determine destination directory (same as the current buffer)
-	local bufDir = filepath.Dir(bp.Buf.AbsPath)
 	local filename = filepath.Base(clip)
-	local dst = filepath.Join(bufDir, filename)
+	local dst = filepath.Join(baseDir, filename)
 
 	-- Only copy if src and dst differ
 	if clip ~= dst then
+		-- TODO: what if dst already exists?
 		local cerr = copyFile(clip, dst)
 		if cerr ~= nil then
 			micro.InfoBar():Error("zettle: image copy failed: " .. cerr)
+			micro.Log("zettle: image copy failed: " .. cerr)
 			return false
 		end
+		micro.InfoBar():Message("zettle: inserted image from " .. clip)
 	end
 
 	-- Build the markdown image link
 	local encodedName = urlEncode(filename)
 	local link = "![" .. filename .. "](./" .. encodedName .. ")"
 
-	-- Cancel the default paste and insert the link ourselves
-	bp.Buf.EventHandler:Insert(buffer.Loc(bp.Cursor.X, bp.Cursor.Y), link)
-	bp.Cursor:GotoLoc(buffer.Loc(bp.Cursor.X + #link, bp.Cursor.Y))
-	micro.InfoBar():Message("zettle: inserted image link for " .. filename)
-	return false
+	return link
 end
 
+-- prePaste intercepts pastes of image file paths: copies the image into the
+-- current buffer's directory and inserts a markdown image link instead.
+function prePaste(bp)
+	-- handles pastes from the internal micro Ctrl-V keybind
+	-- micro:Log("zettle: prePaste on " .. tostring(bp.Buf))
+	if not isMarkdown(bp) then
+		return true
+	end
+
+	local clip = readClipboard()
+
+	local baseDir = filepath.Dir(bp.Buf.AbsPath)
+	local replacement = try_paste_image(baseDir, clip)
+
+	if replacement ~= nil then
+		if replacement == false then
+			-- ERROR
+			return false
+		end
+		-- Cancel the default paste and insert the link ourselves
+		local start = buffer.Loc(bp.Cursor.X, bp.Cursor.Y)
+		bp.Buf.EventHandler:Insert(start, replacement)
+		-- bp.Cursor:GotoLoc(start + #replacement)
+		return false
+	else
+		return true
+	end
+end
+
+function onBeforeTextEvent(buf, te)
+	-- micro:Log("zettle: onBeforeTextEvent on " .. tostring(buf) .. " and " .. tostring(te))
+	-- handles  terminal "bracket-pastes", i.e. those that most terminals make on "Ctrl-Shift-V"
+	if not isMarkdown(buf) then
+		return true
+	end
+
+	-- Convert the Go []byte delta text to a Lua string.
+	-- luar exposes []byte as a Go slice; tostring() gives us the raw content.
+	if #te.Deltas == 0 then
+		return true
+	end
+
+	-- terminal "bracket-pastes" are multi-character events; a single character is a regular keystroke
+	if #te.Deltas[1].Text <= 1 then
+		return true
+	end
+
+	local start = buffer.Loc(te.Deltas[1].Start.X, te.Deltas[1].Start.Y)
+	local clip = goBytes(te.Deltas[1].Text)
+
+	local baseDir = filepath.Dir(buf.AbsPath)
+	local replacement = try_paste_image(baseDir, clip)
+	if replacement ~= nil then
+		if replacement == false then
+			-- ERROR
+			return false
+		end
+		-- modify the paste event to contain our replacement markdown link
+		-- and fallthrough to 'return true' to let the next event handler actually apply it
+		te.Deltas[1].Text = replacement
+	end
+	return true
+end
 -- ── Exported actions ─────────────────────────────────────────────────────────
 
 function PreviewMarkdown(bp)
