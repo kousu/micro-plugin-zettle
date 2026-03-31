@@ -544,6 +544,13 @@ function OpenLink(bp)
 	if not isMarkdown(bp) then
 		return false
 	end
+	if bp.Cursor.X == 0 then
+		-- if a link is the first thing on a line
+		-- it would be impossible to move it down
+		-- there's a workaround: type anything _besides_ enter, like a space or a "- ",
+		-- and then move that line down.
+		return false
+	end
 	local line = bp.Buf:Line(bp.Cursor.Y)
 	local path = linkPathAtCol(line, bp.Cursor.X)
 	if path then
