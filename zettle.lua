@@ -324,7 +324,21 @@ local function toggleBlockquoteLines(bp)
     return true
 end
 
+local function shellquote(s)
+    return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
 -- ── Exported actions ─────────────────────────────────────────────────────────
+
+function PreviewMarkdown(bp)
+    if not isMarkdown(bp) then
+        micro.InfoBar():Error("zettle: not a markdown file")
+        return false
+    end
+
+    micro:Log("previewing with mdcat: " .. bp.Buf.AbsPath)
+    shell.RunInteractiveShell("mdless " .. shellquote(bp.Buf.AbsPath), true, false)
+end
 
 -- ToggleTodo toggles the TODO checkbox only when the cursor is within the [ ] / [x] characters.
 function ToggleTodo(bp)
@@ -478,6 +492,7 @@ function init()
     -- Markdown features
     config.TryBindKey("Enter",      "lua:zettle.Activate|InsertNewline", false)
     config.TryBindKey(">",          "lua:zettle.ToggleBlockquote", false)
+    config.TryBindKey("Ctrl-P",   "lua:zettle.PreviewMarkdown",      false)
     -- Wiki features
     config.TryBindKey("Alt-Left",   "lua:zettle.NavigateBack",      false)
 end
