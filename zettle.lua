@@ -60,6 +60,51 @@ local TEXT_EXTENSIONS = {
 	proto = true,
 }
 
+local IMAGE_EXTENSIONS = {
+	png = true,
+	jpg = true,
+	jpeg = true,
+	gif = true,
+	webp = true,
+	svg = true,
+	bmp = true,
+	tiff = true,
+	tif = true,
+	ico = true,
+	avif = true,
+}
+
+local function shellquote(s)
+	return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+-- Decode %XX percent-encoding in a URL path component.
+local function urlDecode(s)
+	return (s:gsub("%%(%x%x)", function(hex)
+		return string.char(tonumber(hex, 16))
+	end))
+end
+
+-- Percent-encode a file path for use in a markdown link.
+-- Encodes everything except unreserved characters and '/'.
+local function urlEncode(s)
+	return (s:gsub("([^%w%-%.%_%~%/])", function(c)
+		return string.format("%%%02X", string.byte(c))
+	end))
+end
+-- Convert a markdown header line to its GitHub-style anchor slug.
+-- e.g. "## Guide to Your New Life!" → "guide-to-your-new-life"
+local function headerToAnchor(line)
+	-- Strip leading #'s and surrounding whitespace
+	local text = line:match("^#+%s+(.-)%s*$") or line
+	text = text:lower()
+	-- Remove anything that isn't alphanumeric, space, or hyphen
+	text = text:gsub("[^%w%s%-]", "")
+	-- Collapse spaces/runs to a single hyphen
+	text = text:gsub("%s+", "-")
+	return text
+end
+
 -- Returns true when the buffer is a markdown file.
 local function isMarkdown(bp)
 	local ft = bp.Buf.Settings["filetype"]
@@ -164,26 +209,6 @@ local function findVaultRoot()
 		end
 		dir = parent
 	end
-end
-
--- Decode %XX percent-encoding in a URL path component.
-local function urlDecode(s)
-	return (s:gsub("%%(%x%x)", function(hex)
-		return string.char(tonumber(hex, 16))
-	end))
-end
-
--- Convert a markdown header line to its GitHub-style anchor slug.
--- e.g. "## Guide to Your New Life!" → "guide-to-your-new-life"
-local function headerToAnchor(line)
-	-- Strip leading #'s and surrounding whitespace
-	local text = line:match("^#+%s+(.-)%s*$") or line
-	text = text:lower()
-	-- Remove anything that isn't alphanumeric, space, or hyphen
-	text = text:gsub("[^%w%s%-]", "")
-	-- Collapse spaces/runs to a single hyphen
-	text = text:gsub("%s+", "-")
-	return text
 end
 
 -- Jump bp's cursor to the first header whose anchor matches `fragment`.
@@ -367,32 +392,6 @@ local function toggleBlockquoteLines(bp)
 	return true
 end
 
-local function shellquote(s)
-	return "'" .. s:gsub("'", "'\\''") .. "'"
-end
-
-local IMAGE_EXTENSIONS = {
-	png = true,
-	jpg = true,
-	jpeg = true,
-	gif = true,
-	webp = true,
-	svg = true,
-	bmp = true,
-	tiff = true,
-	tif = true,
-	ico = true,
-	avif = true,
-}
-
--- Percent-encode a file path for use in a markdown link.
--- Encodes everything except unreserved characters and '/'.
-local function urlEncodePath(s)
-	return (s:gsub("([^%w%-%.%_%~%/])", function(c)
-		return string.format("%%%02X", string.byte(c))
-	end))
-end
-
 -- Read the system clipboard contents, returns nil on failure.
 -- Mirrors the tool priority in github.com/zyedidia/clipper:
 --   macOS:          pbpaste
@@ -500,7 +499,7 @@ function prePaste(bp)
 	end
 
 	-- Build the markdown image link
-	local encodedName = urlEncodePath(filename)
+	local encodedName = urlEncode(filename)
 	local link = "![" .. filename .. "](./" .. encodedName .. ")"
 
 	-- Cancel the default paste and insert the link ourselves
