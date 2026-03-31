@@ -697,5 +697,5 @@ function init()
 	config.TryBindKey(">", "lua:zettle.ToggleBlockquote", false)
 	config.TryBindKey("Ctrl-P", "lua:zettle.PreviewMarkdown", false)
 	-- Wiki features
-	config.TryBindKey("Alt-Left", "lua:zettle.NavigateBack", false)
+	config.TryBindKey("Alt-Left", "lua:zettle.NavigateBack|StartOfTextToggle", false)
 end
