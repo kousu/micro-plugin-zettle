@@ -6,6 +6,7 @@ local config = import("micro/config")
 local shell = import("micro/shell")
 local fmt = import("fmt")
 local ioutil = import("io/ioutil")
+local io = import("io")
 local time = import("time")
 local os = import("os")
 local runtime = import("runtime")
@@ -368,6 +369,145 @@ end
 
 local function shellquote(s)
 	return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local IMAGE_EXTENSIONS = {
+	png = true,
+	jpg = true,
+	jpeg = true,
+	gif = true,
+	webp = true,
+	svg = true,
+	bmp = true,
+	tiff = true,
+	tif = true,
+	ico = true,
+	avif = true,
+}
+
+-- Percent-encode a file path for use in a markdown link.
+-- Encodes everything except unreserved characters and '/'.
+local function urlEncodePath(s)
+	return (s:gsub("([^%w%-%.%_%~%/])", function(c)
+		return string.format("%%%02X", string.byte(c))
+	end))
+end
+
+-- Read the system clipboard contents, returns nil on failure.
+-- Mirrors the tool priority in github.com/zyedidia/clipper:
+--   macOS:          pbpaste
+--   Linux Wayland:  wl-paste --no-newline  (when WAYLAND_DISPLAY is set)
+--   Linux X11:      xclip, then xsel
+local function readClipboard()
+	local out, err
+
+	if runtime.GOOS == "darwin" then
+		out, err = shell.ExecCommand("pbpaste")
+		if err ~= nil then
+			return nil
+		end
+		return out:match("^(.-)\n?$")
+	end
+
+	-- Linux: prefer Wayland when available
+	if os.Getenv("WAYLAND_DISPLAY") ~= "" then
+		out, err = shell.ExecCommand("wl-paste", "--no-newline")
+		if err == nil then
+			return out
+		end
+		-- wl-paste not installed or failed; fall through to X11 tools
+	end
+
+	-- xclip
+	out, err = shell.ExecCommand("xclip", "-out", "-selection", "clipboard")
+	if err == nil then
+		return out:match("^(.-)\n?$")
+	end
+
+	-- xsel
+	out, err = shell.ExecCommand("xsel", "--output", "--clipboard")
+	if err == nil then
+		return out:match("^(.-)\n?$")
+	end
+
+	return nil
+end
+
+-- Copy src file to dst path. Returns error string or nil on success.
+local function copyFile(src, dst)
+	local srcFile, err = os.Open(src)
+	if err ~= nil then
+		return err:Error()
+	end
+	local dstFile, err2 = os.Create(dst)
+	if err2 ~= nil then
+		srcFile:Close()
+		return err2:Error()
+	end
+	local _, err3 = io.Copy(dstFile, srcFile)
+	srcFile:Close()
+	dstFile:Close()
+	if err3 ~= nil then
+		return err3:Error()
+	end
+	return nil
+end
+
+-- prePaste intercepts pastes of image file paths: copies the image into the
+-- current buffer's directory and inserts a markdown image link instead.
+function prePaste(bp)
+	if not isMarkdown(bp) then
+		return true
+	end
+
+	local clip = readClipboard()
+	if clip == nil or clip == "" then
+		return true
+	end
+
+	-- Must look like a file path (no newlines, no URL scheme)
+	if clip:find("\n") then
+		return true
+	end
+	if clip:match("^[%a][%a%d+%-%.]*://") then
+		return true
+	end
+
+	-- Check extension
+	local ext = clip:match("%.([^%.%s]+)$")
+	if not ext or not IMAGE_EXTENSIONS[ext:lower()] then
+		return true
+	end
+
+	-- Verify the file exists
+	local _, serr = os.Stat(clip)
+	if serr ~= nil then
+		return true
+	end
+
+	-- Determine destination directory (same as the current buffer)
+	local bufDir = filepath.Dir(bp.Buf.AbsPath)
+	local filename = filepath.Base(clip)
+	local dst = filepath.Join(bufDir, filename)
+
+	-- Only copy if src and dst differ
+	if clip ~= dst then
+		local cerr = copyFile(clip, dst)
+		if cerr ~= nil then
+			micro.InfoBar():Error("zettle: image copy failed: " .. cerr)
+			return false
+		end
+	end
+
+	-- Build the markdown image link
+	local encodedName = urlEncodePath(filename)
+	local link = "![" .. filename .. "](./" .. encodedName .. ")"
+
+	-- Cancel the default paste and insert the link ourselves
+	bp.Buf.EventHandler:Insert(buffer.Loc(bp.Cursor.X, bp.Cursor.Y), link)
+	bp.Cursor:GotoLoc(buffer.Loc(bp.Cursor.X + #link, bp.Cursor.Y))
+	micro.InfoBar():Message("zettle: inserted image link for " .. filename)
+	return false
 end
 
 -- ── Exported actions ─────────────────────────────────────────────────────────
