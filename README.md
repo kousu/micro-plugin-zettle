@@ -90,4 +90,6 @@ ln -s "$PWD/micro-plugin-filemanager" ~/.config/micro/plug/filemanager
 micro loads plugins from `~/.config/micro/plug/` at startup, so changes to the
 working copy take effect on next launch (or after `> reload` in an existing session).
 
+To debug, use `micro:Log("...")` and run micro as `micro -debug` and `tail -f log.txt`. (without -debug the log lines go nowhere)
+
 We use `stylua` to lint the code. Make sure your editor is set up for it.
