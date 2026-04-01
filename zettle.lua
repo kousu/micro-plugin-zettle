@@ -675,6 +675,12 @@ local function syncBufPane(bp)
 		return
 	end
 
+	if bp:Tab() ~= micro.CurTab() then
+		-- only do the expensive filemanager redraw if we're the visible pane
+		-- micro:Log("zettle is skipping update because this pane is off-screen")
+		return
+	end
+
 	require("filemanager").Focus(absPath)
 	if zettleRoot ~= nil then
 		bp.Buf.Path = filepath.Rel(zettleRoot, absPath)
