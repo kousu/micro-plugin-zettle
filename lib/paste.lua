@@ -36,13 +36,24 @@ local function copyBesideNote(baseDir, path)
 
 	-- Only copy if src and dst differ
 	if path ~= dst then
-		-- TODO: what if dst already exists?
-		local cerr = util.copyFile(path, dst)
+		local f, pathOrErr = util.createUnique(baseDir, filename)
+		local cerr
+		if f == nil then
+			cerr = pathOrErr
+		else
+			dst = pathOrErr
+			cerr = util.copyInto(path, f)
+			f:Close()
+			if cerr ~= nil then
+				os.Remove(dst)
+			end
+		end
 		if cerr ~= nil then
 			micro.InfoBar():Error("zettle: media copy failed: " .. cerr:gsub("%c", "?"))
 			micro.Log("zettle: media copy failed: " .. cerr)
 			return nil
 		end
+		filename = filepath.Base(dst)
 	end
 
 	return mediaLink(filename)

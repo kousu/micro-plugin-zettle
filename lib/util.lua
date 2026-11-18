@@ -39,22 +39,17 @@ local function slugify(line)
 	return text
 end
 
--- Copy src file to dst path. Returns error string or nil on success.
-local function copyFile(src, dst)
+-- Copy the contents of file `src` into the open file `dstFile`.
+-- Returns an error string, or nil on success.
+local function copyInto(src, dstFile)
 	local srcFile, err = os.Open(src)
 	if err ~= nil then
 		return err:Error()
 	end
-	local dstFile, err2 = os.Create(dst)
-	if err2 ~= nil then
-		srcFile:Close()
-		return err2:Error()
-	end
-	local _, err3 = io.Copy(dstFile, srcFile)
+	local _, err2 = io.Copy(dstFile, srcFile)
 	srcFile:Close()
-	dstFile:Close()
-	if err3 ~= nil then
-		return err3:Error()
+	if err2 ~= nil then
+		return err2:Error()
 	end
 	return nil
 end
@@ -86,6 +81,6 @@ return {
 	urlEncode = urlEncode,
 	installed = installed,
 	slugify = slugify,
-	copyFile = copyFile,
+	copyInto = copyInto,
 	createUnique = createUnique,
 }
