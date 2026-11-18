@@ -71,6 +71,23 @@ add it to `bindings.json`:
 Restoring `Enter` to plain `InsertNewline` is recommended when using `Ctrl-Space`,
 since the default `Enter` binding routes through `Activate` first.
 
+## Pasting media
+
+In a markdown file, pasting an image, video, audio or PDF with `Ctrl-V` saves it next to the note and inserts a link
+like `![name.png](./name.png)`. Existing files are never overwritten; a `-1`, `-2`, … suffix is
+added instead.
+
+- **Files copied in a file manager**: images, videos, audio and PDFs are copied over with their
+  original names and linked, and anything else is pasted as its path.
+- **Image, video, audio or PDF data** (e.g. "Copy Image" in a browser, or a screenshot) is saved as
+  `pasted_<image|video|audio|document>_<date>-<time>.<ext>`.
+
+Video, audio and PDFs use the same `![name](./file)` link. Some renderers show them inline
+(Obsidian does all three); others treat the link as a broken image.
+
+This uses `wl-paste` (Wayland) or `xclip` (X11) to read the clipboard's mimetypes.
+Pasting media doesn't work on macOS yet.
+
 ## Development
 
 Clone the repo and symlink it into micro's plugin directory under the plugin's name:
