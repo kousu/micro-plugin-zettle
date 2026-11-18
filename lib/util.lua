@@ -1,5 +1,7 @@
 -- Small helpers shared by zettle's modules.
 
+local shell = import("micro/shell")
+local filepath = import("filepath")
 local io = import("io")
 local os = import("os")
 
@@ -16,6 +18,12 @@ local function urlEncode(s)
 	return (s:gsub("([^%w%-%.%_%~%/])", function(c)
 		return string.format("%%%02X", string.byte(c))
 	end))
+end
+
+-- Is `cmd` installed? Runs it with `versionFlag` (we can't search PATH from Lua).
+local function installed(cmd, versionFlag)
+	local _, err = shell.ExecCommand(cmd, versionFlag)
+	return err == nil
 end
 
 -- Convert a markdown header line to its GitHub-style anchor slug.
@@ -51,9 +59,33 @@ local function copyFile(src, dst)
 	return nil
 end
 
+-- Create a new file in `dir` named `name`, adding "-1", "-2", ... before the
+-- extension if that name is taken. Never overwrites an existing file.
+-- Returns the open file and its path, or nil and an error string.
+local function createUnique(dir, name)
+	local stem, ext = name:match("^(.+)(%.[^%.]+)$")
+	if not stem then
+		stem, ext = name, ""
+	end
+	local flags = os.O_WRONLY + os.O_CREATE + os.O_EXCL
+	local path = filepath.Join(dir, name)
+	for n = 1, 500 do
+		local f, err = os.OpenFile(path, flags, tonumber("644", 8))
+		if err == nil then
+			return f, path
+		elseif not os.IsExist(err) then
+			return nil, err:Error()
+		end
+		path = filepath.Join(dir, stem .. "-" .. n .. ext)
+	end
+	return nil, "too many files named like " .. name
+end
+
 return {
 	urlDecode = urlDecode,
 	urlEncode = urlEncode,
+	installed = installed,
 	slugify = slugify,
 	copyFile = copyFile,
+	createUnique = createUnique,
 }

@@ -3,6 +3,7 @@
 local micro = import("micro")
 local buffer = import("micro/buffer")
 local config = import("micro/config")
+local time = import("time")
 local fmt = import("fmt")
 local os = import("os")
 local filepath = import("filepath")
@@ -14,6 +15,11 @@ local clipboard = require("zettle.clipboard")
 -- Convert a Go []byte userdata to a Lua string.
 local function goBytes(b)
 	return fmt.Sprintf("%s", b)
+end
+
+-- Build a markdown media link to `filename` in the note's own folder.
+local function mediaLink(filename)
+	return "![" .. filename .. "](./" .. util.urlEncode(filename) .. ")"
 end
 
 -- Never paste binary data into a note: shows an error and returns true if `text` is binary.
@@ -73,15 +79,44 @@ local function try_paste_media(baseDir, clip)
 		micro.InfoBar():Message("zettle: inserted media from " .. clip)
 	end
 
-	-- Build the markdown media link
-	local encodedName = util.urlEncode(filename)
-	local link = "![" .. filename .. "](./" .. encodedName .. ")"
-
-	return link
+	return mediaLink(filename)
 end
 
--- prePaste intercepts pastes of media file paths: copies the media into the
--- current buffer's directory and inserts a markdown media link instead.
+-- Save clipboard media of type `mime` into baseDir as pasted_<kind>_<timestamp>.<ext>.
+-- Returns the markdown link, or false on error.
+local function try_paste_media_data(baseDir, mime, ext)
+	local data = clipboard.read(mime)
+	if data == nil or not media.looksLike(mime:lower(), data) then
+		micro.InfoBar():Error("zettle: could not read " .. mime .. " from the clipboard")
+		micro.Log("zettle: could not read " .. mime .. " from the clipboard")
+		return false
+	end
+
+	local kind = mime:match("^(video)/")
+		or mime:match("^(audio)/")
+		or (mime:find("pdf", 1, true) and "document")
+		or "image"
+	local name = "pasted_" .. kind .. "_" .. time.Now():Format("20060102-150405") .. "." .. ext
+	local f, dst = util.createUnique(baseDir, name)
+	if f == nil then
+		micro.InfoBar():Error("zettle: " .. dst)
+		return false
+	end
+	local _, werr = f:WriteString(data)
+	f:Close()
+	if werr ~= nil then
+		os.Remove(dst)
+		micro.InfoBar():Error("zettle: " .. werr:Error())
+		return false
+	end
+
+	micro.InfoBar():Message("zettle: saved " .. filepath.Base(dst))
+	return mediaLink(filepath.Base(dst))
+end
+
+-- prePaste intercepts pastes of media, either as media data or as media file
+-- paths: it saves or copies the media into the current buffer's directory and
+-- inserts a markdown media link instead.
 local function pasteClipboard(bp)
 	-- a read-only note can't take the link, so don't save anything for it
 	if bp.Buf.Type.Readonly then
@@ -93,13 +128,39 @@ local function pasteClipboard(bp)
 	end
 	-- handles pastes from the internal micro Ctrl-V keybind
 	-- micro:Log("zettle: prePaste on " .. tostring(bp.Buf))
-	local clip = clipboard.read()
-	if refuseBinary(clip) then
-		return false
-	end
-
 	local baseDir = filepath.Dir(bp.Buf.AbsPath)
-	local replacement = try_paste_media(baseDir, clip)
+	local availableTypes = clipboard.availableTypes()
+
+	local replacement
+	local mime, ext = media.selectType(availableTypes)
+	if mime then
+		-- media, e.g. "Copy Image" in a browser, or a screenshot
+		replacement = try_paste_media_data(baseDir, mime, ext)
+	else
+		-- no media we can save, so look for text
+		local hasHtml = availableTypes["text/html"] ~= nil
+		-- (asking a clipboard with no plain text for text can return its media or HTML)
+		local plain
+		if clipboard.hasPlainText(availableTypes) or not (hasHtml or clipboard.hasMedia(availableTypes)) then
+			plain = clipboard.read()
+			if plain == "" then
+				plain = nil
+			end
+		end
+		if plain == nil and clipboard.hasMedia(availableTypes) then
+			local unknown = clipboard.printableMediaType(availableTypes)
+			micro.InfoBar():Error("zettle: refusing to paste unknown media type" .. (unknown and " " .. unknown or ""))
+			return false
+		elseif plain == nil and hasHtml then
+			micro.InfoBar():Error("zettle: refusing to paste HTML with no plain text")
+			return false
+		end
+		if refuseBinary(plain) then
+			return false
+		end
+		-- the path of a media file, copied as text
+		replacement = try_paste_media(baseDir, plain)
+	end
 
 	if replacement ~= nil then
 		if replacement == false then
