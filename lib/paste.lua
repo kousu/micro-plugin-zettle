@@ -16,6 +16,15 @@ local function goBytes(b)
 	return fmt.Sprintf("%s", b)
 end
 
+-- Never paste binary data into a note: shows an error and returns true if `text` is binary.
+local function refuseBinary(text)
+	if text ~= nil and text:find("\0", 1, true) then
+		micro.InfoBar():Error("zettle: refusing to paste binary clipboard contents")
+		return true
+	end
+	return false
+end
+
 local function try_paste_media(baseDir, clip)
 	if clip == nil or clip == "" then
 		-- micro:Log("zettle: empty clipboard ")
@@ -85,6 +94,9 @@ local function pasteClipboard(bp)
 	-- handles pastes from the internal micro Ctrl-V keybind
 	-- micro:Log("zettle: prePaste on " .. tostring(bp.Buf))
 	local clip = clipboard.read()
+	if refuseBinary(clip) then
+		return false
+	end
 
 	local baseDir = filepath.Dir(bp.Buf.AbsPath)
 	local replacement = try_paste_media(baseDir, clip)
