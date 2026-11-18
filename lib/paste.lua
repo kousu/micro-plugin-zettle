@@ -2,9 +2,9 @@
 
 local micro = import("micro")
 local buffer = import("micro/buffer")
+local shell = import("micro/shell")
 local config = import("micro/config")
 local time = import("time")
-local fmt = import("fmt")
 local os = import("os")
 local filepath = import("filepath")
 
@@ -12,14 +12,11 @@ local util = require("zettle.util")
 local media = require("zettle.media")
 local clipboard = require("zettle.clipboard")
 
--- Convert a Go []byte userdata to a Lua string.
-local function goBytes(b)
-	return fmt.Sprintf("%s", b)
-end
-
 -- Build a markdown media link to `filename` in the note's own folder.
 local function mediaLink(filename)
-	return "![" .. filename .. "](./" .. util.urlEncode(filename) .. ")"
+	-- file names can hold newlines and brackets, which would break the link's text
+	local alt = filename:gsub("%c", " "):gsub("([\\%[%]])", "\\%1")
+	return "![" .. alt .. "](./" .. util.urlEncode(filename) .. ")"
 end
 
 -- Never paste binary data into a note: shows an error and returns true if `text` is binary.
@@ -31,55 +28,56 @@ local function refuseBinary(text)
 	return false
 end
 
-local function try_paste_media(baseDir, clip)
-	if clip == nil or clip == "" then
-		-- micro:Log("zettle: empty clipboard ")
-		return
-	end
-
-	-- Must look like a file path (no newlines, no URL scheme)
-	if clip:find("\n") then
-		-- micro:Log("zettle: clipboard contains newlines ")
-		return
-	end
-	if clip:match("^[%a][%a%d+%-%.]*://") then
-		-- micro:Log("zettle: clipboard is a uri")
-		return
-	end
-
-	-- Check extension
-	local ext = clip:match("%.([^%.%s]+)$")
-	if not ext or not media.EXTENSIONS[ext:lower()] then
-		-- micro:Log("zettle: extension not media: " .. tostring(ext))
-		return
-	end
-	-- micro:Log("zettle: copy has media extension " .. ext)
-
-	-- Verify the file exists
-	local _, serr = os.Stat(clip)
-	if serr ~= nil then
-		micro.InfoBar():Error("zettle: " .. clip .. ": " .. serr.Error())
-		micro:Log("zettle: " .. clip .. ": " .. serr.Error())
-		return
-	end
-
-	-- Determine destination directory (same as the current buffer)
-	local filename = filepath.Base(clip)
+-- Copy the file at `path` beside the note, unless it's already there. Returns
+-- the markdown link; if the copy failed, this shows an error and returns nil.
+local function copyBesideNote(baseDir, path)
+	local filename = filepath.Base(path)
 	local dst = filepath.Join(baseDir, filename)
 
 	-- Only copy if src and dst differ
-	if clip ~= dst then
+	if path ~= dst then
 		-- TODO: what if dst already exists?
-		local cerr = util.copyFile(clip, dst)
+		local cerr = util.copyFile(path, dst)
 		if cerr ~= nil then
-			micro.InfoBar():Error("zettle: media copy failed: " .. cerr)
+			micro.InfoBar():Error("zettle: media copy failed: " .. cerr:gsub("%c", "?"))
 			micro.Log("zettle: media copy failed: " .. cerr)
-			return false
+			return nil
 		end
-		micro.InfoBar():Message("zettle: inserted media from " .. clip)
 	end
 
 	return mediaLink(filename)
+end
+
+-- Is the copied file at `path` an image, video, audio or PDF, going by its contents?
+-- If it can't be read, shows an error and returns false.
+local function isCopiedMedia(path)
+	local head, err = shell.ExecCommand("head", "-c", "512", path)
+	if err ~= nil then
+		local message = "zettle: couldn't read " .. path:gsub("%c", "?")
+		micro.InfoBar():Error(message)
+		micro.Log(message)
+		return false
+	end
+	return media.isMedia(head)
+end
+
+-- The text to paste for files copied in a file manager, one per line: media
+-- files, going by their contents, are copied beside the note and
+-- linked, any other file is its path, and any other URI is itself.
+local function pasteCopiedLocations(baseDir, items)
+	local text
+	for _, item in ipairs(items) do
+		local line = item.uri
+		if line == nil and isCopiedMedia(item.path) then
+			-- nil if the copy failed, leaving the plain path below
+			line = copyBesideNote(baseDir, item.path)
+		end
+		if line == nil then
+			line = item.path
+		end
+		text = text and (text .. "\n" .. line) or line
+	end
+	return text
 end
 
 -- Save clipboard media of type `mime` into baseDir as pasted_<kind>_<timestamp>.<ext>.
@@ -133,7 +131,11 @@ local function pasteClipboard(bp)
 
 	local replacement
 	local mime, ext = media.selectType(availableTypes)
-	if mime then
+	local copied = availableTypes["text/uri-list"] and clipboard.copiedLocations()
+	if copied and #copied > 0 then
+		-- files copied in a file manager
+		replacement = pasteCopiedLocations(baseDir, copied)
+	elseif mime then
 		-- media, e.g. "Copy Image" in a browser, or a screenshot
 		replacement = try_paste_media_data(baseDir, mime, ext)
 	else
@@ -158,8 +160,6 @@ local function pasteClipboard(bp)
 		if refuseBinary(plain) then
 			return false
 		end
-		-- the path of a media file, copied as text
-		replacement = try_paste_media(baseDir, plain)
 	end
 
 	if replacement ~= nil then
@@ -177,38 +177,6 @@ local function pasteClipboard(bp)
 	end
 end
 
-local function rewriteTerminalPaste(buf, te)
-	-- micro:Log("zettle: onBeforeTextEvent on " .. tostring(buf) .. " and " .. tostring(te))
-	-- handles  terminal "bracket-pastes", i.e. those that most terminals make on "Ctrl-Shift-V"
-	-- Convert the Go []byte delta text to a Lua string.
-	-- luar exposes []byte as a Go slice; tostring() gives us the raw content.
-	if #te.Deltas == 0 then
-		return true
-	end
-
-	-- terminal "bracket-pastes" are multi-character events; a single character is a regular keystroke
-	if #te.Deltas[1].Text <= 1 then
-		return true
-	end
-
-	local start = buffer.Loc(te.Deltas[1].Start.X, te.Deltas[1].Start.Y)
-	local clip = goBytes(te.Deltas[1].Text)
-
-	local baseDir = filepath.Dir(buf.AbsPath)
-	local replacement = try_paste_media(baseDir, clip)
-	if replacement ~= nil then
-		if replacement == false then
-			-- ERROR
-			return false
-		end
-		-- modify the paste event to contain our replacement markdown link
-		-- and fallthrough to 'return true' to let the next event handler actually apply it
-		te.Deltas[1].Text = replacement
-	end
-	return true
-end
-
 return {
 	pasteClipboard = pasteClipboard,
-	rewriteTerminalPaste = rewriteTerminalPaste,
 }

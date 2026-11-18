@@ -158,10 +158,28 @@ local function read(mime)
 	return out
 end
 
+-- What was copied to the clipboard, from its text/uri-list: a list with
+-- { path = decoded path } for each local file and { uri = uri } for anything else.
+local function copiedLocations()
+	local list = read("text/uri-list")
+	if list == nil then
+		return nil
+	end
+	local items = {}
+	for line in list:gmatch("[^\r\n]+") do
+		if not line:match("^#") then
+			local path = line:match("^file://[^/]*(/.*)$")
+			items[#items + 1] = path and { path = util.urlDecode(path) } or { uri = line }
+		end
+	end
+	return items
+end
+
 return {
 	read = read,
 	availableTypes = availableTypes,
 	printableMediaType = printableMediaType,
 	hasPlainText = hasPlainText,
 	hasMedia = hasMedia,
+	copiedLocations = copiedLocations,
 }

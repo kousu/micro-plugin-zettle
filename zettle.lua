@@ -376,13 +376,6 @@ function prePaste(bp)
 	return paste.pasteClipboard(bp)
 end
 
-function onBeforeTextEvent(buf, te)
-	if not isMarkdown(buf) then
-		return true
-	end
-	return paste.rewriteTerminalPaste(buf, te)
-end
-
 -- ── Exported actions ─────────────────────────────────────────────────────────
 
 -- RunInteractiveShell takes one string and splits it into arguments

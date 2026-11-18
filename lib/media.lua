@@ -175,7 +175,13 @@ local function looksLike(mime, data)
 	return m ~= nil and signature(data) == m[3]
 end
 
+-- Is `data`, the start of a file, an image, video, audio or PDF in a format we know?
+local function isMedia(data)
+	return signature(data) ~= nil
+end
+
 return {
+	isMedia = isMedia,
 	EXTENSIONS = EXTENSIONS,
 	extension = extension,
 	selectType = selectType,
