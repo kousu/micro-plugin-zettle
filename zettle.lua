@@ -82,13 +82,7 @@ local IMAGE_EXTENSIONS = {
 
 -- Convert a Go []byte userdata to a Lua string.
 local function goBytes(b)
-	-- there's an asymmetry: writing lua strings to go is just assinging to them
-	-- but reading go strings in lua requires this?? XXX
-	local chars = {}
-	for i = 1, #b do
-		chars[i] = string.char(b[i])
-	end
-	return table.concat(chars)
+	return fmt.Sprintf("%s", b)
 end
 
 local function shellquote(s)
