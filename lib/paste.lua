@@ -9,6 +9,7 @@ local os = import("os")
 local filepath = import("filepath")
 
 local util = require("zettle.util")
+local base64 = require("zettle.base64")
 local media = require("zettle.media")
 local clipboard = require("zettle.clipboard")
 
@@ -138,16 +139,15 @@ local function pasteCopiedLocations(baseDir, items)
 	return text
 end
 
--- Save clipboard media of type `mime` into baseDir as pasted_<kind>_<timestamp>.<ext>.
--- Returns the markdown link, or false on error.
-local function try_paste_media_data(baseDir, mime, ext)
-	local data = clipboard.read(mime)
-	if data == nil or not media.looksLike(mime:lower(), data) then
-		micro.InfoBar():Error("zettle: could not read " .. mime .. " from the clipboard")
-		micro.Log("zettle: could not read " .. mime .. " from the clipboard")
-		return false
+-- Save media of type `mime` (in lowercase) in baseDir as
+-- pasted_<image|video|audio|document>_<timestamp>.<ext>, never overwriting a file. Only
+-- saves data that really is of a type we allow.
+-- Returns the file's name, or nil and an error.
+local function saveMedia(baseDir, mime, data)
+	local ext = media.extension(mime)
+	if ext == nil or data == nil or not media.looksLike(mime, data) then
+		return nil, "not a valid " .. mime .. " file"
 	end
-
 	local kind = mime:match("^(video)/")
 		or mime:match("^(audio)/")
 		or (mime:find("pdf", 1, true) and "document")
@@ -155,25 +155,71 @@ local function try_paste_media_data(baseDir, mime, ext)
 	local name = "pasted_" .. kind .. "_" .. time.Now():Format("20060102-150405") .. "." .. ext
 	local f, dst = util.createUnique(baseDir, name)
 	if f == nil then
-		micro.InfoBar():Error("zettle: " .. dst)
-		return false
+		return nil, dst
 	end
 	local _, werr = f:WriteString(data)
 	f:Close()
 	if werr ~= nil then
 		os.Remove(dst)
-		micro.InfoBar():Error("zettle: " .. werr:Error())
+		return nil, werr:Error()
+	end
+	return filepath.Base(dst)
+end
+
+-- Save the clipboard's media of type `mime` beside the note.
+-- Returns the markdown link, or false on error.
+local function try_paste_media_data(baseDir, mime)
+	local data = clipboard.read(mime)
+	if data == nil then
+		micro.InfoBar():Error("zettle: could not read " .. mime .. " from the clipboard")
+		micro.Log("zettle: could not read " .. mime .. " from the clipboard")
 		return false
 	end
 
-	micro.InfoBar():Message("zettle: saved " .. filepath.Base(dst))
-	return mediaLink(filepath.Base(dst))
+	local name, err = saveMedia(baseDir, mime:lower(), data)
+	if name == nil then
+		micro.InfoBar():Error("zettle: " .. err)
+		return false
+	end
+	micro.InfoBar():Message("zettle: saved " .. name)
+	return mediaLink(name)
+end
+
+-- Decode a data: URL. Returns its mimetype and contents, or nil.
+local function decodeDataURL(url)
+	local meta, payload = url:match("^data:([^,]*),(.*)$")
+	if meta == nil then
+		return nil
+	end
+	local mime = (meta:match("^([^;]+)") or "text/plain"):lower()
+	local data
+	if meta:find(";%s*base64") then
+		data = base64.decode(payload)
+	else
+		data = util.urlDecode(payload)
+	end
+	return mime, data
+end
+
+-- Save data: media beside the note; returns the src to link to, or nil.
+local function saveDataMedia(baseDir, url)
+	local mime, data = decodeDataURL(url)
+	if mime == nil then
+		micro.Log("zettle: not saving a malformed data: URL")
+		return nil
+	end
+	local name, err = saveMedia(baseDir, mime, data)
+	if name == nil then
+		micro.Log("zettle: not saving a pasted data: URL: " .. err)
+		return nil
+	end
+	return "./" .. util.urlEncode(name)
 end
 
 -- Convert the clipboard's HTML (e.g. rich text copied from a browser, a
 -- word processor or Google Docs) to Markdown, as GitHub and Obsidian do.
 -- Returns the Markdown, or nil to fall back to a plain-text paste.
-local function try_paste_html()
+local function try_paste_html(baseDir)
 	local html = clipboard.read("text/html")
 	if html == nil or html == "" then
 		return nil
@@ -181,10 +227,10 @@ local function try_paste_html()
 	local ok, md = pcall(function()
 		return require("markdownify").convert(html, {
 			imageHandler = function(src)
-				-- TODO: save data: media beside the note; until then, leave
-				-- them out rather than put the base64 in the note
+				-- media embedded in the HTML are saved beside the note,
+				-- rather than putting their base64 in it
 				if src:find("^data:") then
-					return nil
+					return saveDataMedia(baseDir, src)
 				end
 				return src
 			end,
@@ -219,14 +265,22 @@ local function pasteClipboard(bp)
 	local availableTypes = clipboard.availableTypes()
 
 	local replacement
-	local mime, ext = media.selectType(availableTypes)
+	local mime = media.selectType(availableTypes)
+	-- apps can offer a PDF rendering of copied text; the text is what was meant
+	if
+		mime
+		and mime:lower():find("pdf", 1, true)
+		and (availableTypes["text/html"] or clipboard.hasPlainText(availableTypes))
+	then
+		mime = nil
+	end
 	local copied = availableTypes["text/uri-list"] and clipboard.copiedLocations()
 	if copied and #copied > 0 then
 		-- files copied in a file manager
 		replacement = pasteCopiedLocations(baseDir, copied)
 	elseif mime then
 		-- media, e.g. "Copy Image" in a browser, or a screenshot
-		replacement = try_paste_media_data(baseDir, mime, ext)
+		replacement = try_paste_media_data(baseDir, mime)
 	else
 		-- no media we can save, so look for text
 		local hasHtml = availableTypes["text/html"] ~= nil
@@ -238,7 +292,7 @@ local function pasteClipboard(bp)
 				plain = nil
 			end
 		end
-		local converted = hasHtml and config.GetGlobalOption("zettle.convert-html") and try_paste_html() or nil
+		local converted = hasHtml and config.GetGlobalOption("zettle.convert-html") and try_paste_html(baseDir) or nil
 		local text = converted or plain
 		if text == nil and clipboard.hasMedia(availableTypes) then
 			local unknown = clipboard.printableMediaType(availableTypes)

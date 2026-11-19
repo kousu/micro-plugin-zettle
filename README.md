@@ -94,8 +94,9 @@ In a markdown file, pasting rich text with `Ctrl-V` (from a web page, a word
 processor or Google Docs, say) converts it to Markdown, as GitHub and
 Obsidian do: headings, emphasis, links, images, lists, tables, quotes and
 code become Markdown, other text is kept as text, and styles and layout are
-dropped. Images embedded in the copied HTML as `data:` URLs are left out for
-now.
+dropped. Images embedded in the copied HTML (as `data:` URLs) are saved
+beside the note, like pasted media, and linked from it; other images keep
+their URLs.
 
 The conversion is done by [markdownify](https://github.com/kousu/lua-markdownify),
 vendored in `vendor/markdownify/`. It uses the clipboard's `text/html`,

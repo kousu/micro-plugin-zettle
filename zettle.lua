@@ -41,7 +41,7 @@ end
 -- of the plugin, so they live in a subfolder, and are registered with
 -- package.preload so that require() finds them without changing package.path.
 local LIB_DIR = filepath.Join(config.ConfigDir, "plug", "zettle", "lib")
-for _, name in ipairs({ "util", "media", "clipboard", "paste" }) do
+for _, name in ipairs({ "util", "media", "clipboard", "base64", "paste" }) do
 	local module = "zettle." .. name
 	package.loaded[module] = nil -- so that `reload` picks up changes
 	package.preload[module] = function()
