@@ -10,6 +10,33 @@ local runtime = import("runtime")
 local filepath = import("filepath")
 local strings = import("strings")
 
+-- The vendored HTML-to-Markdown converter, markdownify (vendor/markdownify/),
+-- which bundles the HTML parser lusoup. micro only loads a plugin's
+-- top-level .lua files, so register their modules with package.preload, so
+-- that require("markdownify") loads them from the plugin directory without
+-- changing package.path.
+local MARKDOWNIFY_DIR = filepath.Join(config.ConfigDir, "plug", "zettle", "vendor", "markdownify")
+for _, module in ipairs({
+	"markdownify",
+	"markdownify.lusoup",
+	"markdownify.lusoup.dom",
+	"markdownify.lusoup.tokenizer",
+	"markdownify.lusoup.treebuilder",
+	"markdownify.lusoup.selector",
+	"markdownify.lusoup.entities",
+	"markdownify.lusoup.entity_table",
+}) do
+	if package.preload[module] == nil then
+		local path = module:gsub("%.", "/")
+		if module == "markdownify" or module == "markdownify.lusoup" then
+			path = path .. "/init"
+		end
+		package.preload[module] = function()
+			return assert(loadfile(filepath.Join(MARKDOWNIFY_DIR, path .. ".lua")))()
+		end
+	end
+end
+
 -- zettle's own modules, in lib/. micro runs every top-level .lua file as part
 -- of the plugin, so they live in a subfolder, and are registered with
 -- package.preload so that require() finds them without changing package.path.
