@@ -581,6 +581,9 @@ function preinit()
 end
 
 function init()
+	-- convert rich text to Markdown when pasting it with Ctrl-V
+	config.RegisterCommonOption("zettle", "convert-html", true)
+
 	zettleRoot = findVaultRoot()
 	if zettleRoot ~= nil then
 		micro.Log("zettle vault: " .. zettleRoot)
