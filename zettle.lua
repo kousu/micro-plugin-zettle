@@ -4,14 +4,26 @@ local micro = import("micro")
 local buffer = import("micro/buffer")
 local config = import("micro/config")
 local shell = import("micro/shell")
-local fmt = import("fmt")
-local ioutil = import("io/ioutil")
-local io = import("io")
 local time = import("time")
 local os = import("os")
 local runtime = import("runtime")
 local filepath = import("filepath")
 local strings = import("strings")
+
+-- zettle's own modules, in lib/. micro runs every top-level .lua file as part
+-- of the plugin, so they live in a subfolder, and are registered with
+-- package.preload so that require() finds them without changing package.path.
+local LIB_DIR = filepath.Join(config.ConfigDir, "plug", "zettle", "lib")
+for _, name in ipairs({ "util", "media", "clipboard", "paste" }) do
+	local module = "zettle." .. name
+	package.loaded[module] = nil -- so that `reload` picks up changes
+	package.preload[module] = function()
+		return assert(loadfile(filepath.Join(LIB_DIR, name .. ".lua")))()
+	end
+end
+
+local util = require("zettle.util")
+local paste = require("zettle.paste")
 
 -- File extensions that should be opened inside micro rather than an external viewer.
 local TEXT_EXTENSIONS = {
@@ -59,69 +71,6 @@ local TEXT_EXTENSIONS = {
 	graphql = true,
 	proto = true,
 }
-
-local MEDIA_EXTENSIONS = {
-	png = true,
-	jpg = true,
-	jpeg = true,
-	gif = true,
-	webp = true,
-	svg = true,
-	bmp = true,
-	tiff = true,
-	tif = true,
-	ico = true,
-	avif = true,
-	heic = true,
-	jxl = true,
-	-- video
-	mp4 = true,
-	webm = true,
-	mkv = true,
-	avi = true,
-	mov = true,
-	-- audio
-	m4a = true,
-	mp3 = true,
-	ogg = true,
-	opus = true,
-	wav = true,
-	flac = true,
-	-- documents
-	pdf = true,
-}
-
--- Convert a Go []byte userdata to a Lua string.
-local function goBytes(b)
-	return fmt.Sprintf("%s", b)
-end
-
--- Decode %XX percent-encoding in a URL path component.
-local function urlDecode(s)
-	return (s:gsub("%%(%x%x)", function(hex)
-		return string.char(tonumber(hex, 16))
-	end))
-end
-
--- Percent-encode a file path for use in a markdown link.
--- Encodes everything except unreserved characters and '/'.
-local function urlEncode(s)
-	return (s:gsub("([^%w%-%.%_%~%/])", function(c)
-		return string.format("%%%02X", string.byte(c))
-	end))
-end
--- Convert a markdown header line to its GitHub-style anchor slug.
--- e.g. "## Guide to Your New Life!" → "guide-to-your-new-life"
-local function slugify(line)
-	-- Strip leading #'s and surrounding whitespace
-	local text = line:match("^#+%s+(.-)%s*$") or line
-	text = text:lower()
-	-- Remove anything that isn't alphanumeric, space, or hyphen
-	text = text:gsub("[^%w%s%-]", "")
-	-- Collapse spaces/runs to a single hyphen
-	text = text:gsub("%s+", "-")
-	return text
-end
 
 -- Returns true when the bufpane or buffer inside the pane is a markdown file.
 local function isMarkdown(buf)
@@ -243,7 +192,7 @@ local function jumpToFragment(bp, fragment)
 	end
 	for y = 0, bp.Buf:LinesNum() - 1 do
 		local line = bp.Buf:Line(y)
-		if line:match("^#+%s") and slugify(line) == fragment then
+		if line:match("^#+%s") and util.slugify(line) == fragment then
 			bp.Cursor:GotoLoc(buffer.Loc(0, y))
 			bp:Center()
 			return
@@ -257,7 +206,7 @@ local function nearestFragment(bp)
 	for y = bp.Cursor.Y, 0, -1 do
 		local line = bp.Buf:Line(y)
 		if line:match("^#+%s") then
-			return slugify(line)
+			return util.slugify(line)
 		end
 	end
 	return nil
@@ -299,7 +248,7 @@ local function openPath(bp, uri)
 	end
 
 	-- Anything else we assume is a file path
-	local path = urlDecode(uri)
+	local path = util.urlDecode(uri)
 
 	-- Split off a #fragment before any other processing.
 	local fragment
@@ -417,184 +366,20 @@ local function toggleBlockquoteLines(bp)
 	return true
 end
 
--- Read the system clipboard contents, returns nil on failure.
--- Mirrors the tool priority in github.com/zyedidia/clipper:
---   macOS:          pbpaste
---   Linux Wayland:  wl-paste --no-newline  (when WAYLAND_DISPLAY is set)
---   Linux X11:      xclip, then xsel
-local function readClipboard()
-	local out, err
-
-	if runtime.GOOS == "darwin" then
-		out, err = shell.ExecCommand("pbpaste")
-		if err ~= nil then
-			return nil
-		end
-		return out:match("^(.-)\n?$")
-	end
-
-	-- Linux: prefer Wayland when available
-	if os.Getenv("WAYLAND_DISPLAY") ~= "" then
-		out, err = shell.ExecCommand("wl-paste", "--no-newline")
-		if err == nil then
-			return out
-		end
-		-- wl-paste not installed or failed; fall through to X11 tools
-	end
-
-	-- xclip
-	out, err = shell.ExecCommand("xclip", "-out", "-selection", "clipboard")
-	if err == nil then
-		return out:match("^(.-)\n?$")
-	end
-
-	-- xsel
-	out, err = shell.ExecCommand("xsel", "--output", "--clipboard")
-	if err == nil then
-		return out:match("^(.-)\n?$")
-	end
-
-	return nil
-end
-
--- Copy src file to dst path. Returns error string or nil on success.
-local function copyFile(src, dst)
-	local srcFile, err = os.Open(src)
-	if err ~= nil then
-		return err:Error()
-	end
-	local dstFile, err2 = os.Create(dst)
-	if err2 ~= nil then
-		srcFile:Close()
-		return err2:Error()
-	end
-	local _, err3 = io.Copy(dstFile, srcFile)
-	srcFile:Close()
-	dstFile:Close()
-	if err3 ~= nil then
-		return err3:Error()
-	end
-	return nil
-end
-
-local function try_paste_media(baseDir, clip)
-	if clip == nil or clip == "" then
-		-- micro:Log("zettle: empty clipboard ")
-		return
-	end
-
-	-- Must look like a file path (no newlines, no URL scheme)
-	if clip:find("\n") then
-		-- micro:Log("zettle: clipboard contains newlines ")
-		return
-	end
-	if clip:match("^[%a][%a%d+%-%.]*://") then
-		-- micro:Log("zettle: clipboard is a uri")
-		return
-	end
-
-	-- Check extension
-	local ext = clip:match("%.([^%.%s]+)$")
-	if not ext or not MEDIA_EXTENSIONS[ext:lower()] then
-		-- micro:Log("zettle: extension not media: " .. tostring(ext))
-		return
-	end
-	-- micro:Log("zettle: copy has media extension " .. ext)
-
-	-- Verify the file exists
-	local _, serr = os.Stat(clip)
-	if serr ~= nil then
-		micro.InfoBar():Error("zettle: " .. clip .. ": " .. serr.Error())
-		micro:Log("zettle: " .. clip .. ": " .. serr.Error())
-		return
-	end
-
-	-- Determine destination directory (same as the current buffer)
-	local filename = filepath.Base(clip)
-	local dst = filepath.Join(baseDir, filename)
-
-	-- Only copy if src and dst differ
-	if clip ~= dst then
-		-- TODO: what if dst already exists?
-		local cerr = copyFile(clip, dst)
-		if cerr ~= nil then
-			micro.InfoBar():Error("zettle: media copy failed: " .. cerr)
-			micro.Log("zettle: media copy failed: " .. cerr)
-			return false
-		end
-		micro.InfoBar():Message("zettle: inserted media from " .. clip)
-	end
-
-	-- Build the markdown media link
-	local encodedName = urlEncode(filename)
-	local link = "![" .. filename .. "](./" .. encodedName .. ")"
-
-	return link
-end
-
--- prePaste intercepts pastes of media file paths: copies the media into the
--- current buffer's directory and inserts a markdown media link instead.
 function prePaste(bp)
-	-- handles pastes from the internal micro Ctrl-V keybind
-	-- micro:Log("zettle: prePaste on " .. tostring(bp.Buf))
 	if not isMarkdown(bp) then
 		return true
 	end
-
-	local clip = readClipboard()
-
-	local baseDir = filepath.Dir(bp.Buf.AbsPath)
-	local replacement = try_paste_media(baseDir, clip)
-
-	if replacement ~= nil then
-		if replacement == false then
-			-- ERROR
-			return false
-		end
-		-- Cancel the default paste and insert the link ourselves
-		local start = buffer.Loc(bp.Cursor.X, bp.Cursor.Y)
-		bp.Buf.EventHandler:Insert(start, replacement)
-		-- bp.Cursor:GotoLoc(start + #replacement)
-		return false
-	else
-		return true
-	end
+	return paste.pasteClipboard(bp)
 end
 
 function onBeforeTextEvent(buf, te)
-	-- micro:Log("zettle: onBeforeTextEvent on " .. tostring(buf) .. " and " .. tostring(te))
-	-- handles  terminal "bracket-pastes", i.e. those that most terminals make on "Ctrl-Shift-V"
 	if not isMarkdown(buf) then
 		return true
 	end
-
-	-- Convert the Go []byte delta text to a Lua string.
-	-- luar exposes []byte as a Go slice; tostring() gives us the raw content.
-	if #te.Deltas == 0 then
-		return true
-	end
-
-	-- terminal "bracket-pastes" are multi-character events; a single character is a regular keystroke
-	if #te.Deltas[1].Text <= 1 then
-		return true
-	end
-
-	local start = buffer.Loc(te.Deltas[1].Start.X, te.Deltas[1].Start.Y)
-	local clip = goBytes(te.Deltas[1].Text)
-
-	local baseDir = filepath.Dir(buf.AbsPath)
-	local replacement = try_paste_media(baseDir, clip)
-	if replacement ~= nil then
-		if replacement == false then
-			-- ERROR
-			return false
-		end
-		-- modify the paste event to contain our replacement markdown link
-		-- and fallthrough to 'return true' to let the next event handler actually apply it
-		te.Deltas[1].Text = replacement
-	end
-	return true
+	return paste.rewriteTerminalPaste(buf, te)
 end
+
 -- ── Exported actions ─────────────────────────────────────────────────────────
 
 -- RunInteractiveShell takes one string and splits it into arguments
