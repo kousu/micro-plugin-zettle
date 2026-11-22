@@ -85,10 +85,6 @@ local function goBytes(b)
 	return fmt.Sprintf("%s", b)
 end
 
-local function shellquote(s)
-	return "'" .. s:gsub("'", "'\\''") .. "'"
-end
-
 -- Decode %XX percent-encoding in a URL path component.
 local function urlDecode(s)
 	return (s:gsub("%%(%x%x)", function(hex)
@@ -590,14 +586,20 @@ function onBeforeTextEvent(buf, te)
 end
 -- ── Exported actions ─────────────────────────────────────────────────────────
 
+-- RunInteractiveShell takes one string and splits it into arguments
+-- (no shell is involved), so quote the path for that splitter.
+local function quoteArg(s)
+	return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
 function PreviewMarkdown(bp)
 	if not isMarkdown(bp) then
 		micro.InfoBar():Error("zettle: not a markdown file")
 		return false
 	end
 
-	micro:Log("previewing with mdcat: " .. bp.Buf.AbsPath)
-	shell.RunInteractiveShell("mdless " .. shellquote(bp.Buf.AbsPath), true, false)
+	micro:Log("previewing with glow: " .. bp.Buf.AbsPath)
+	shell.RunInteractiveShell("glow -p " .. quoteArg(bp.Buf.AbsPath), true, false)
 end
 
 -- ToggleTodo toggles the TODO checkbox only when the cursor is within the [ ] / [x] characters.
