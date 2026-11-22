@@ -288,7 +288,7 @@ local function openPath(bp, uri)
 	end
 
 	-- Anything else we assume is a file path
-	path = urlDecode(uri)
+	local path = urlDecode(uri)
 
 	-- Split off a #fragment before any other processing.
 	local fragment
