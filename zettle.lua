@@ -101,7 +101,7 @@ local function urlEncode(s)
 end
 -- Convert a markdown header line to its GitHub-style anchor slug.
 -- e.g. "## Guide to Your New Life!" → "guide-to-your-new-life"
-local function headerToAnchor(line)
+local function slugify(line)
 	-- Strip leading #'s and surrounding whitespace
 	local text = line:match("^#+%s+(.-)%s*$") or line
 	text = text:lower()
@@ -232,7 +232,7 @@ local function jumpToFragment(bp, fragment)
 	end
 	for y = 0, bp.Buf:LinesNum() - 1 do
 		local line = bp.Buf:Line(y)
-		if line:match("^#+%s") and headerToAnchor(line) == fragment then
+		if line:match("^#+%s") and slugify(line) == fragment then
 			bp.Cursor:GotoLoc(buffer.Loc(0, y))
 			bp:Center()
 			return
@@ -246,7 +246,7 @@ local function nearestFragment(bp)
 	for y = bp.Cursor.Y, 0, -1 do
 		local line = bp.Buf:Line(y)
 		if line:match("^#+%s") then
-			return headerToAnchor(line)
+			return slugify(line)
 		end
 	end
 	return nil
