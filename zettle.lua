@@ -60,7 +60,7 @@ local TEXT_EXTENSIONS = {
 	proto = true,
 }
 
-local IMAGE_EXTENSIONS = {
+local MEDIA_EXTENSIONS = {
 	png = true,
 	jpg = true,
 	jpeg = true,
@@ -72,12 +72,23 @@ local IMAGE_EXTENSIONS = {
 	tif = true,
 	ico = true,
 	avif = true,
-	-- video formats; handled the same:
+	heic = true,
+	jxl = true,
+	-- video
 	mp4 = true,
 	webm = true,
+	mkv = true,
 	avi = true,
 	mov = true,
+	-- audio
 	m4a = true,
+	mp3 = true,
+	ogg = true,
+	opus = true,
+	wav = true,
+	flac = true,
+	-- documents
+	pdf = true,
 }
 
 -- Convert a Go []byte userdata to a Lua string.
@@ -466,7 +477,7 @@ local function copyFile(src, dst)
 	return nil
 end
 
-local function try_paste_image(baseDir, clip)
+local function try_paste_media(baseDir, clip)
 	if clip == nil or clip == "" then
 		-- micro:Log("zettle: empty clipboard ")
 		return
@@ -484,11 +495,11 @@ local function try_paste_image(baseDir, clip)
 
 	-- Check extension
 	local ext = clip:match("%.([^%.%s]+)$")
-	if not ext or not IMAGE_EXTENSIONS[ext:lower()] then
-		-- micro:Log("zettle: extension not an image: " .. tostring(ext))
+	if not ext or not MEDIA_EXTENSIONS[ext:lower()] then
+		-- micro:Log("zettle: extension not media: " .. tostring(ext))
 		return
 	end
-	-- micro:Log("zettle: copy has image extension " .. ext)
+	-- micro:Log("zettle: copy has media extension " .. ext)
 
 	-- Verify the file exists
 	local _, serr = os.Stat(clip)
@@ -507,22 +518,22 @@ local function try_paste_image(baseDir, clip)
 		-- TODO: what if dst already exists?
 		local cerr = copyFile(clip, dst)
 		if cerr ~= nil then
-			micro.InfoBar():Error("zettle: image copy failed: " .. cerr)
-			micro.Log("zettle: image copy failed: " .. cerr)
+			micro.InfoBar():Error("zettle: media copy failed: " .. cerr)
+			micro.Log("zettle: media copy failed: " .. cerr)
 			return false
 		end
-		micro.InfoBar():Message("zettle: inserted image from " .. clip)
+		micro.InfoBar():Message("zettle: inserted media from " .. clip)
 	end
 
-	-- Build the markdown image link
+	-- Build the markdown media link
 	local encodedName = urlEncode(filename)
 	local link = "![" .. filename .. "](./" .. encodedName .. ")"
 
 	return link
 end
 
--- prePaste intercepts pastes of image file paths: copies the image into the
--- current buffer's directory and inserts a markdown image link instead.
+-- prePaste intercepts pastes of media file paths: copies the media into the
+-- current buffer's directory and inserts a markdown media link instead.
 function prePaste(bp)
 	-- handles pastes from the internal micro Ctrl-V keybind
 	-- micro:Log("zettle: prePaste on " .. tostring(bp.Buf))
@@ -533,7 +544,7 @@ function prePaste(bp)
 	local clip = readClipboard()
 
 	local baseDir = filepath.Dir(bp.Buf.AbsPath)
-	local replacement = try_paste_image(baseDir, clip)
+	local replacement = try_paste_media(baseDir, clip)
 
 	if replacement ~= nil then
 		if replacement == false then
@@ -572,7 +583,7 @@ function onBeforeTextEvent(buf, te)
 	local clip = goBytes(te.Deltas[1].Text)
 
 	local baseDir = filepath.Dir(buf.AbsPath)
-	local replacement = try_paste_image(baseDir, clip)
+	local replacement = try_paste_media(baseDir, clip)
 	if replacement ~= nil then
 		if replacement == false then
 			-- ERROR
