@@ -2,6 +2,7 @@
 
 local micro = import("micro")
 local buffer = import("micro/buffer")
+local config = import("micro/config")
 local fmt = import("fmt")
 local os = import("os")
 local filepath = import("filepath")
@@ -73,6 +74,10 @@ end
 -- prePaste intercepts pastes of media file paths: copies the media into the
 -- current buffer's directory and inserts a markdown media link instead.
 local function pasteClipboard(bp)
+	-- only "external" is the system clipboard that we know how to read
+	if config.GetGlobalOption("clipboard") ~= "external" then
+		return true
+	end
 	-- handles pastes from the internal micro Ctrl-V keybind
 	-- micro:Log("zettle: prePaste on " .. tostring(bp.Buf))
 	local clip = clipboard.read()
