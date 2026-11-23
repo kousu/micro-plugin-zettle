@@ -97,6 +97,9 @@ end
 -- Toggle the checkbox on `line` (0-based row `y` in `bp`).
 -- Returns true if a change was made.
 local function toggleTodoOnLine(bp, y)
+	if bp.Buf.Type.Readonly then
+		return false
+	end
 	local line = bp.Buf:Line(bp.Cursor.Y)
 	local savedX, savedY = bp.Cursor.X, bp.Cursor.Y
 
@@ -440,6 +443,9 @@ end
 -- When there is no selection (or not in a markdown buffer), falls back to
 -- inserting a literal ">" character.
 function ToggleBlockquote(bp)
+	if bp.Buf.Type.Readonly then
+		return false
+	end
 	if isMarkdown(bp) and bp.Cursor:HasSelection() then
 		return toggleBlockquoteLines(bp)
 	end

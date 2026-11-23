@@ -74,6 +74,10 @@ end
 -- prePaste intercepts pastes of media file paths: copies the media into the
 -- current buffer's directory and inserts a markdown media link instead.
 local function pasteClipboard(bp)
+	-- a read-only note can't take the link, so don't save anything for it
+	if bp.Buf.Type.Readonly then
+		return true
+	end
 	-- only "external" is the system clipboard that we know how to read
 	if config.GetGlobalOption("clipboard") ~= "external" then
 		return true
