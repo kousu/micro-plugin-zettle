@@ -120,6 +120,10 @@ again, and pasting the same media into a note in another folder gives it its
 own copy. If a link is edited away before its download finishes, the file
 is still kept.
 
+Some sites refuse downloads that don't look like a browser's, so each one
+presents as a common browser, and tells the site the page the text was
+copied from (without its `#fragment`), as a browser would.
+
 To paste rich text as plain text instead:
 
 ```

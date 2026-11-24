@@ -255,6 +255,8 @@ end
 -- `plain`, the clipboard's text, is pasted if the HTML can't be
 -- converted; `source` is the page it was copied from, or its site, if known.
 local function pasteHtml(bp, baseDir, html, plain, source)
+	-- browsers don't send a page's #fragment as the Referer
+	local pageUrl = source and source:match("^[^#]*")
 	local buf = bp.Buf
 	-- micro only redraws between events, so convert in a later one to show this
 	micro.InfoBar():Message("zettle: pasting rich text...")
@@ -282,7 +284,7 @@ local function pasteHtml(bp, baseDir, html, plain, source)
 			return
 		end
 		insertAtCursors(bp, md)
-		downloads.queue(buf, baseDir, remoteMedia)
+		downloads.queue(buf, baseDir, remoteMedia, pageUrl)
 		micro.InfoBar():Message("zettle: pasted rich text")
 	end)
 end

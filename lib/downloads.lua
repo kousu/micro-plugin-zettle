@@ -22,11 +22,37 @@ local media = require("zettle.media")
 local MAX_DOWNLOADS = 4 -- at once
 local MAX_DOWNLOADS_PER_PASTE = 50
 
--- downloads[url] = { state = "pending", waiters = { { buf =, baseDir =, marker =, title = }, ... }, baseDir = ... }
+-- downloads[url] = { state = "pending", waiters = { { buf =, baseDir =, marker =, title = }, ... }, baseDir = ..., referer = ... }
 --               or { state = "done", path = ..., baseDir = ... }
 -- Failed downloads are forgotten, so pasting the URL again retries.
 local downloads = {}
 
+-- Some sites refuse curl's own User-Agent, so downloads present as a common
+-- browser, picked once per session.
+local USER_AGENTS = {
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:146.0) Gecko/20100101 Firefox/146.0",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
+	"Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0",
+	"Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+}
+math.randomseed(time.Now():UnixNano() % 2147483647)
+local USER_AGENT = USER_AGENTS[math.random(#USER_AGENTS)]
 local queue = {} -- urls waiting for a free slot
 local running = 0
 local results = { done = 0, failed = 0 }
@@ -259,6 +285,11 @@ local function startDownload(url)
 	local noop = function() end
 	local args = {
 		"-fsL",
+		"-A",
+		USER_AGENT,
+		-- ";auto" alone sends no Referer except on redirects
+		"-e",
+		(entry.referer or "") .. ";auto",
 		"--connect-timeout",
 		"10",
 		"--max-time",
@@ -312,6 +343,17 @@ startDownloads = function()
 	end
 end
 
+-- The Referer to send when downloading `url`: the page it was copied from,
+-- if known, else the media's own site. Hotlink protection usually only
+-- checks that the Referer is from the same site.
+local function downloadReferer(url, pageUrl)
+	if pageUrl then
+		return pageUrl
+	end
+	local origin = url:match("^(https?://[^/?#]+)")
+	return origin and origin .. "/" or nil
+end
+
 -- Start any queued downloads.
 local function startQueuedDownloads()
 	if #queue == 0 then
@@ -340,7 +382,7 @@ end
 -- Download the media in `items`, { url =, marker =, title = }, whose marked
 -- links have just been pasted into `buf`, to `baseDir`. Each link is swapped
 -- for the local file when it's ready, or restored if the download fails.
-local function queueMediaDownloads(buf, baseDir, items)
+local function queueMediaDownloads(buf, baseDir, items, pageUrl)
 	for _, item in ipairs(items) do
 		local waiter = { buf = buf, baseDir = baseDir, marker = item.marker, title = item.title }
 		local entry = downloads[item.url]
@@ -352,6 +394,7 @@ local function queueMediaDownloads(buf, baseDir, items)
 				state = "pending",
 				waiters = { waiter },
 				baseDir = baseDir,
+				referer = downloadReferer(item.url, pageUrl),
 			}
 			queue[#queue + 1] = item.url
 		end
