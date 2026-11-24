@@ -1,5 +1,6 @@
 -- Small helpers shared by zettle's modules.
 
+local micro = import("micro")
 local shell = import("micro/shell")
 local filepath = import("filepath")
 local io = import("io")
@@ -76,6 +77,25 @@ local function createUnique(dir, name)
 	return nil, "too many files named like " .. name
 end
 
+-- Is this buffer still open in some pane?
+local function bufferIsOpen(buf)
+	local ok, open = pcall(function()
+		local tabs = micro.Tabs().List
+		for i = 1, #tabs do
+			local panes = tabs[i].Panes
+			for j = 1, #panes do
+				local pane = panes[j]
+				if pane.Buf == buf then
+					return true
+				end
+			end
+		end
+		return false
+	end)
+	-- if the panes can't be inspected, assume it's open
+	return not ok or open
+end
+
 return {
 	urlDecode = urlDecode,
 	urlEncode = urlEncode,
@@ -83,4 +103,5 @@ return {
 	slugify = slugify,
 	copyInto = copyInto,
 	createUnique = createUnique,
+	bufferIsOpen = bufferIsOpen,
 }

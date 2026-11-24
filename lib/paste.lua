@@ -216,34 +216,49 @@ local function saveDataMedia(baseDir, url)
 	return "./" .. util.urlEncode(name)
 end
 
--- Convert the clipboard's HTML (e.g. rich text copied from a browser, a
--- word processor or Google Docs) to Markdown, as GitHub and Obsidian do.
--- Returns the Markdown, or nil to fall back to a plain-text paste.
-local function try_paste_html(baseDir)
-	local html = clipboard.read("text/html")
-	if html == nil or html == "" then
-		return nil
-	end
-	local ok, md = pcall(function()
-		return require("markdownify").convert(html, {
-			imageHandler = function(src)
-				-- media embedded in the HTML are saved beside the note,
-				-- rather than putting their base64 in it
-				if src:find("^data:") then
-					return saveDataMedia(baseDir, src)
-				end
-				return src
-			end,
-		})
+-- Convert pasted HTML to Markdown.
+local function convertHtml(baseDir, html)
+	return require("markdownify").convert(html, {
+		imageHandler = function(src)
+			-- media embedded in the HTML are saved beside the note,
+			-- rather than putting their base64 in it
+			if src:find("^data:") then
+				return saveDataMedia(baseDir, src)
+			end
+			return src
+		end,
+	})
+end
+
+-- Paste the clipboard's HTML (rich text copied from a browser, a word
+-- processor or Google Docs) as Markdown, as GitHub and Obsidian do.
+-- `plain`, the clipboard's text, is pasted if the HTML can't be converted.
+local function pasteHtml(bp, baseDir, html, plain)
+	local buf = bp.Buf
+	-- micro only redraws between events, so convert in a later one to show this
+	micro.InfoBar():Message("zettle: pasting rich text...")
+	micro.After(0, function()
+		if bp.Buf ~= buf or not util.bufferIsOpen(buf) or buf.Type.Readonly then
+			micro.InfoBar():Message("zettle: rich text paste cancelled")
+			return
+		end
+		local ok, md = pcall(convertHtml, baseDir, html)
+		if not ok then
+			micro.Log("zettle: couldn't convert pasted HTML: " .. tostring(md))
+		end
+		if not ok or md == nil or md == "" then
+			md = plain or ""
+			if md == "" then
+				micro.InfoBar():Error("zettle: could not convert the clipboard's HTML")
+				return
+			end
+		end
+		if refuseBinary(md) then
+			return
+		end
+		insertAtCursors(bp, md)
+		micro.InfoBar():Message("zettle: pasted rich text")
 	end)
-	if not ok then
-		micro.Log("zettle: couldn't convert pasted HTML: " .. tostring(md))
-		return nil
-	end
-	if md == "" then
-		return nil
-	end
-	return md
 end
 
 -- prePaste intercepts pastes of media, either as media data or as media file
@@ -292,21 +307,25 @@ local function pasteClipboard(bp)
 				plain = nil
 			end
 		end
-		local converted = hasHtml and config.GetGlobalOption("zettle.convert-html") and try_paste_html(baseDir) or nil
-		local text = converted or plain
-		if text == nil and clipboard.hasMedia(availableTypes) then
+		if hasHtml and config.GetGlobalOption("zettle.convert-html") then
+			local html = clipboard.read(availableTypes["text/html"])
+			if html ~= nil and html ~= "" then
+				pasteHtml(bp, baseDir, html, plain)
+				return false
+			end
+		end
+		if plain == nil and clipboard.hasMedia(availableTypes) then
 			local unknown = clipboard.printableMediaType(availableTypes)
 			micro.InfoBar():Error("zettle: refusing to paste unknown media type" .. (unknown and " " .. unknown or ""))
 			return false
-		elseif text == nil and hasHtml then
+		elseif plain == nil and hasHtml then
 			micro.InfoBar():Error("zettle: refusing to paste HTML with no plain text")
 			return false
 		end
 		-- micro inserts plain text itself (per cursor), so it misses insertAtCursor's guard
-		if text == plain and refuseBinary(text) then
+		if refuseBinary(plain) then
 			return false
 		end
-		replacement = converted
 	end
 
 	if replacement ~= nil then
