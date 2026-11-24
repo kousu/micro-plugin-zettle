@@ -302,11 +302,13 @@ local function startDownload(url)
 		"\n%{http_code}\t%{exitcode}\t%{content_type}\t%{errormsg}",
 		url,
 	}
+	micro.Log("zettle: curl " .. table.concat(args, " "))
 	shell.JobSpawn("curl", args, noop, noop, function(output)
 		local report = (output or ""):match("([^\n]*)\n?$")
 		local status, exitCode, contentType, message = report:match("^(%d%d%d)\t(%d*)\t([^\t]*)\t(.*)$")
 		local mime = contentType and contentType:lower():match("^%s*([^;%s]+)")
 		if not (status == "200" and exitCode == "0" and mime and media.looksLike(mime, fileHead(partPath, 512))) then
+			micro.Log(("zettle: curl reported for %s: %s"):format(url, report))
 			os.Remove(partPath)
 			finishDownload(url, false, nil, downloadFailure(status, exitCode, mime, message or ""))
 			return

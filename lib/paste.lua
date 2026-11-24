@@ -221,6 +221,7 @@ end
 -- `source` is the page it was copied from (or only its site), if known.
 local function convertHtml(baseDir, html, source, remoteMedia)
 	local download = config.GetGlobalOption("zettle.download-media")
+	micro.Log("zettle: pasted HTML came from " .. tostring(source))
 	return require("markdownify").convert(html, {
 		-- links within the copied page go to its headings in the note, and
 		-- its footnotes are kept
@@ -230,19 +231,30 @@ local function convertHtml(baseDir, html, source, remoteMedia)
 			-- media embedded in the HTML are saved beside the note,
 			-- rather than putting their base64 in it
 			if src:find("^data:") then
-				return saveDataMedia(baseDir, src)
+				local saved = saveDataMedia(baseDir, src)
+				micro.Log(("zettle: media data:%s… -> %s"):format(src:sub(6, 40), tostring(saved)))
+				return saved
 			end
-			-- links that markdownify would wrap in <> can't be found to swap later
-			if download and src:find("^https?://") and not src:find("[%s()<>]") then
+			if not download then
+				micro.Log("zettle: media " .. src .. ": left as is (zettle.download-media is off)")
+			elseif not src:find("^https?://") then
+				micro.Log("zettle: media " .. src .. ": left as is (not http(s))")
+			elseif src:find("[%s()<>]") then
+				-- links that markdownify would wrap in <> can't be found to swap later
+				micro.Log("zettle: media " .. src .. ": left as is (has whitespace, () or <>)")
+			else
 				local downloaded = downloads.downloadedLink(src, baseDir)
 				if downloaded then
+					micro.Log("zettle: media " .. src .. ": already downloaded: " .. downloaded)
 					return downloaded
 				end
 				if #remoteMedia >= downloads.MAX_DOWNLOADS_PER_PASTE then
+					micro.Log("zettle: media " .. src .. ": left as is (too many in one paste)")
 					return src
 				end
 				local marker = downloads.newMarker()
 				remoteMedia[#remoteMedia + 1] = { url = src, marker = marker, title = title }
+				micro.Log("zettle: media " .. src .. ": will download")
 				return src, nil, marker
 			end
 			return src
