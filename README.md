@@ -96,7 +96,9 @@ Obsidian do: headings, emphasis, links, images, lists, tables, quotes and
 code become Markdown, other text is kept as text, and styles and layout are
 dropped. Images embedded in the copied HTML (as `data:` URLs) are saved
 beside the note, like pasted media, and linked from it; other images keep
-their URLs.
+their URLs. When the browser says which page the text was copied from,
+links to that page's own headings point to them in the note, and its
+footnotes are kept.
 
 The conversion is done by [markdownify](https://github.com/kousu/lua-markdownify),
 vendored in `vendor/markdownify/`. It uses the clipboard's `text/html`,

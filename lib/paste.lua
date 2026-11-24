@@ -216,9 +216,14 @@ local function saveDataMedia(baseDir, url)
 	return "./" .. util.urlEncode(name)
 end
 
--- Convert pasted HTML to Markdown.
-local function convertHtml(baseDir, html)
+-- Convert pasted HTML to Markdown. `source` is the page it was copied
+-- from (or only its site), if known.
+local function convertHtml(baseDir, html, source)
 	return require("markdownify").convert(html, {
+		-- links within the copied page go to its headings in the note, and
+		-- its footnotes are kept
+		source = source,
+		anchor = util.slugify,
 		imageHandler = function(src)
 			-- media embedded in the HTML are saved beside the note,
 			-- rather than putting their base64 in it
@@ -232,8 +237,9 @@ end
 
 -- Paste the clipboard's HTML (rich text copied from a browser, a word
 -- processor or Google Docs) as Markdown, as GitHub and Obsidian do.
--- `plain`, the clipboard's text, is pasted if the HTML can't be converted.
-local function pasteHtml(bp, baseDir, html, plain)
+-- `plain`, the clipboard's text, is pasted if the HTML can't be
+-- converted; `source` is the page it was copied from, or its site, if known.
+local function pasteHtml(bp, baseDir, html, plain, source)
 	local buf = bp.Buf
 	-- micro only redraws between events, so convert in a later one to show this
 	micro.InfoBar():Message("zettle: pasting rich text...")
@@ -242,7 +248,7 @@ local function pasteHtml(bp, baseDir, html, plain)
 			micro.InfoBar():Message("zettle: rich text paste cancelled")
 			return
 		end
-		local ok, md = pcall(convertHtml, baseDir, html)
+		local ok, md = pcall(convertHtml, baseDir, html, source)
 		if not ok then
 			micro.Log("zettle: couldn't convert pasted HTML: " .. tostring(md))
 		end
@@ -310,7 +316,7 @@ local function pasteClipboard(bp)
 		if hasHtml and config.GetGlobalOption("zettle.convert-html") then
 			local html = clipboard.read(availableTypes["text/html"])
 			if html ~= nil and html ~= "" then
-				pasteHtml(bp, baseDir, html, plain)
+				pasteHtml(bp, baseDir, html, plain, clipboard.sourceUrl())
 				return false
 			end
 		end

@@ -175,6 +175,26 @@ local function copiedLocations()
 	return items
 end
 
+-- The page that the clipboard's rich text was copied from, if the browser
+-- says, else nil. Chromium and the browsers built on it (Chrome, Edge,
+-- Opera, Brave, Vivaldi, ...) offer its address, #fragment and all, as
+-- chromium/x-source-url; Firefox offers only the page's site, as
+-- text/x-moz-url-priv.
+local SOURCE_URL_TYPES = { "text/x-moz-url-priv", "chromium/x-source-url" }
+local function sourceUrl()
+	for _, mime in ipairs(SOURCE_URL_TYPES) do
+		local s = read(mime)
+		if s ~= nil then
+			-- some versions of Firefox write this type as UTF-16
+			s = s:gsub("%z", ""):match("^%s*(%S+)")
+			if s and s:find("^https?://") then
+				return s
+			end
+		end
+	end
+	return nil
+end
+
 return {
 	read = read,
 	availableTypes = availableTypes,
@@ -182,4 +202,5 @@ return {
 	hasPlainText = hasPlainText,
 	hasMedia = hasMedia,
 	copiedLocations = copiedLocations,
+	sourceUrl = sourceUrl,
 }
