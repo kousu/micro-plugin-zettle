@@ -1,6 +1,7 @@
 -- Small helpers shared by zettle's modules.
 
 local micro = import("micro")
+local buffer = import("micro/buffer")
 local shell = import("micro/shell")
 local filepath = import("filepath")
 local io = import("io")
@@ -96,6 +97,25 @@ local function bufferIsOpen(buf)
 	return not ok or open
 end
 
+-- The number of characters in `s`.
+local function runeCount(s)
+	return select(2, s:gsub("[^\128-\191]", ""))
+end
+
+-- The start and end of the first occurrence of the one-line `needle` in
+-- `buf`, or nil.
+local function findInBuffer(buf, needle)
+	for y = 0, buf:LinesNum() - 1 do
+		local line = buf:Line(y)
+		local s, e = line:find(needle, 1, true)
+		if s then
+			-- micro's columns count characters, not bytes
+			return buffer.Loc(runeCount(line:sub(1, s - 1)), y), buffer.Loc(runeCount(line:sub(1, e)), y)
+		end
+	end
+	return nil
+end
+
 return {
 	urlDecode = urlDecode,
 	urlEncode = urlEncode,
@@ -104,4 +124,5 @@ return {
 	copyInto = copyInto,
 	createUnique = createUnique,
 	bufferIsOpen = bufferIsOpen,
+	findInBuffer = findInBuffer,
 }

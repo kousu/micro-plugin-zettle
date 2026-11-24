@@ -104,6 +104,22 @@ The conversion is done by [markdownify](https://github.com/kousu/lua-markdownify
 vendored in `vendor/markdownify/`. It uses the clipboard's `text/html`,
 read with `wl-paste` or `xclip` like pasted media.
 
+To also download the pasted media that are on the web, beside the note:
+
+```
+> set zettle.download-media true
+```
+
+The paste happens at once, linking to the media's URLs; they download in
+the background (with `curl`), and each link switches to the local file when
+its download finishes. If a download fails, the link keeps its URL. This is
+off by default, and has no effect with `zettle.convert-html` off.
+
+A file identical to one already beside the note is reused rather than saved
+again, and pasting the same media into a note in another folder gives it its
+own copy. If a link is edited away before its download finishes, the file
+is still kept.
+
 To paste rich text as plain text instead:
 
 ```

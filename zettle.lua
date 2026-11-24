@@ -41,7 +41,7 @@ end
 -- of the plugin, so they live in a subfolder, and are registered with
 -- package.preload so that require() finds them without changing package.path.
 local LIB_DIR = filepath.Join(config.ConfigDir, "plug", "zettle", "lib")
-for _, name in ipairs({ "util", "media", "clipboard", "base64", "paste" }) do
+for _, name in ipairs({ "util", "media", "clipboard", "downloads", "base64", "paste" }) do
 	local module = "zettle." .. name
 	package.loaded[module] = nil -- so that `reload` picks up changes
 	package.preload[module] = function()
@@ -583,6 +583,8 @@ end
 function init()
 	-- convert rich text to Markdown when pasting it with Ctrl-V
 	config.RegisterCommonOption("zettle", "convert-html", true)
+	-- download the media in pasted rich text beside the note
+	config.RegisterCommonOption("zettle", "download-media", false)
 
 	zettleRoot = findVaultRoot()
 	if zettleRoot ~= nil then

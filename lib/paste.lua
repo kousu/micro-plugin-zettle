@@ -12,6 +12,7 @@ local util = require("zettle.util")
 local base64 = require("zettle.base64")
 local media = require("zettle.media")
 local clipboard = require("zettle.clipboard")
+local downloads = require("zettle.downloads")
 
 -- Build a markdown media link to `filename` in the note's own folder.
 local function mediaLink(filename)
@@ -216,19 +217,33 @@ local function saveDataMedia(baseDir, url)
 	return "./" .. util.urlEncode(name)
 end
 
--- Convert pasted HTML to Markdown. `source` is the page it was copied
--- from (or only its site), if known.
-local function convertHtml(baseDir, html, source)
+-- Convert pasted HTML to Markdown, adding the media to download to `remoteMedia`.
+-- `source` is the page it was copied from (or only its site), if known.
+local function convertHtml(baseDir, html, source, remoteMedia)
+	local download = config.GetGlobalOption("zettle.download-media")
 	return require("markdownify").convert(html, {
 		-- links within the copied page go to its headings in the note, and
 		-- its footnotes are kept
 		source = source,
 		anchor = util.slugify,
-		imageHandler = function(src)
+		imageHandler = function(src, _, title)
 			-- media embedded in the HTML are saved beside the note,
 			-- rather than putting their base64 in it
 			if src:find("^data:") then
 				return saveDataMedia(baseDir, src)
+			end
+			-- links that markdownify would wrap in <> can't be found to swap later
+			if download and src:find("^https?://") and not src:find("[%s()<>]") then
+				local downloaded = downloads.downloadedLink(src, baseDir)
+				if downloaded then
+					return downloaded
+				end
+				if #remoteMedia >= downloads.MAX_DOWNLOADS_PER_PASTE then
+					return src
+				end
+				local marker = downloads.newMarker()
+				remoteMedia[#remoteMedia + 1] = { url = src, marker = marker, title = title }
+				return src, nil, marker
 			end
 			return src
 		end,
@@ -248,11 +263,15 @@ local function pasteHtml(bp, baseDir, html, plain, source)
 			micro.InfoBar():Message("zettle: rich text paste cancelled")
 			return
 		end
-		local ok, md = pcall(convertHtml, baseDir, html, source)
+		-- downloaded once their links are in the note
+		local remoteMedia = {}
+		local ok, md = pcall(convertHtml, baseDir, html, source, remoteMedia)
 		if not ok then
 			micro.Log("zettle: couldn't convert pasted HTML: " .. tostring(md))
 		end
 		if not ok or md == nil or md == "" then
+			-- the fallback text doesn't have this paste's media links
+			remoteMedia = {}
 			md = plain or ""
 			if md == "" then
 				micro.InfoBar():Error("zettle: could not convert the clipboard's HTML")
@@ -263,6 +282,7 @@ local function pasteHtml(bp, baseDir, html, plain, source)
 			return
 		end
 		insertAtCursors(bp, md)
+		downloads.queue(buf, baseDir, remoteMedia)
 		micro.InfoBar():Message("zettle: pasted rich text")
 	end)
 end
