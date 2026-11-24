@@ -28,6 +28,53 @@ local function refuseBinary(text)
 	return false
 end
 
+-- With smartpaste, give the lines of `text`, pasted at `loc`, the
+-- indentation of the line pasted into.
+local function smartIndent(buf, loc, text)
+	if buf.Settings["smartpaste"] and loc.X > 0 then
+		local pasteIndent = text:match("^[ \t]*")
+		if pasteIndent ~= " " and text:find("\n" .. pasteIndent, 1, true) then
+			local lineIndent = buf:Line(loc.Y):match("^[ \t]*")
+			-- the line pasted into already has the first line's indentation
+			text = text:sub(#pasteIndent + 1)
+			-- (skipped when it changes nothing: slow on a long paste in micro's Lua)
+			if lineIndent ~= pasteIndent then
+				text = text:gsub("\n" .. pasteIndent, "\n" .. lineIndent)
+			end
+		end
+	end
+	return text
+end
+
+-- Paste `text` at the cursor of `bp`, as micro's own paste does
+-- (BufPane.paste in micro's internal/action/actions.go), which plugins
+-- can't call with their own text: re-indent it if smartpaste is on,
+-- replace the selection, leave the cursor after the text, and scroll to it.
+local function insertAtCursor(bp, text)
+	text = smartIndent(bp.Buf, bp.Cursor, text)
+	if bp.Cursor:HasSelection() then
+		bp.Cursor:DeleteSelection()
+		bp.Cursor:ResetSelection()
+	end
+	-- (bp.Cursor.Loc reaches Lua as a pointer; Insert takes a value)
+	bp.Buf:Insert(buffer.Loc(bp.Cursor.X, bp.Cursor.Y), text)
+	bp:Relocate()
+end
+
+-- Paste `text` at every cursor. micro stops running Paste for the other
+-- cursors once prePaste cancels it, so a paste we handle has to do them all.
+local function insertAtCursors(bp, text)
+	if refuseBinary(text) then
+		return
+	end
+	local cursors = bp.Buf:GetCursors()
+	for i = 1, #cursors do
+		bp.Buf:SetCurCursor(cursors[i].Num)
+		bp.Cursor = cursors[i]
+		insertAtCursor(bp, text)
+	end
+end
+
 -- Copy the file at `path` beside the note, unless it's already there. Returns
 -- the markdown link; if the copy failed, this shows an error and returns nil.
 local function copyBesideNote(baseDir, path)
@@ -168,6 +215,7 @@ local function pasteClipboard(bp)
 			micro.InfoBar():Error("zettle: refusing to paste HTML with no plain text")
 			return false
 		end
+		-- micro inserts plain text itself (per cursor), so it misses insertAtCursor's guard
 		if refuseBinary(plain) then
 			return false
 		end
@@ -179,9 +227,7 @@ local function pasteClipboard(bp)
 			return false
 		end
 		-- Cancel the default paste and insert the link ourselves
-		local start = buffer.Loc(bp.Cursor.X, bp.Cursor.Y)
-		bp.Buf.EventHandler:Insert(start, replacement)
-		-- bp.Cursor:GotoLoc(start + #replacement)
+		insertAtCursors(bp, replacement)
 		return false
 	else
 		return true
