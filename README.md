@@ -88,6 +88,48 @@ Video, audio and PDFs use the same `![name](./file)` link. Some renderers show t
 This uses `wl-paste` (Wayland) or `xclip` (X11) to read the clipboard's mimetypes.
 Pasting media doesn't work on macOS yet.
 
+## Pasting rich text
+
+In a markdown file, pasting rich text with `Ctrl-V` (from a web page, a word
+processor or Google Docs, say) converts it to Markdown, as GitHub and
+Obsidian do: headings, emphasis, links, images, lists, tables, quotes and
+code become Markdown, other text is kept as text, and styles and layout are
+dropped. Images embedded in the copied HTML (as `data:` URLs) are saved
+beside the note, like pasted media, and linked from it; other images keep
+their URLs. When the browser says which page the text was copied from,
+links to that page's own headings point to them in the note, and its
+footnotes are kept.
+
+The conversion is done by [markdownify](https://github.com/kousu/lua-markdownify),
+vendored in `vendor/markdownify/`. It uses the clipboard's `text/html`,
+read with `wl-paste` or `xclip` like pasted media.
+
+To also download the pasted media that are on the web, beside the note:
+
+```
+> set zettle.download-media true
+```
+
+The paste happens at once, linking to the media's URLs; they download in
+the background (with `curl`), and each link switches to the local file when
+its download finishes. If a download fails, the link keeps its URL. This is
+off by default, and has no effect with `zettle.convert-html` off.
+
+A file identical to one already beside the note is reused rather than saved
+again, and pasting the same media into a note in another folder gives it its
+own copy. If a link is edited away before its download finishes, the file
+is still kept.
+
+Some sites refuse downloads that don't look like a browser's, so each one
+presents as a common browser, and tells the site the page the text was
+copied from (without its `#fragment`), as a browser would.
+
+To paste rich text as plain text instead:
+
+```
+> set zettle.convert-html false
+```
+
 ## Development
 
 Clone the repo and symlink it into micro's plugin directory under the plugin's name:

@@ -1,0 +1,5 @@
+markdownify, vendored from https://github.com/kousu/lua-markdownify (branch speedup).
+It bundles lusoup; see markdownify/lusoup/VERSION.
+
+commit: ef9f80218663fb6d3207a824ca80088286e043e9
+license: MIT (LICENSE)

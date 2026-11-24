@@ -10,11 +10,38 @@ local runtime = import("runtime")
 local filepath = import("filepath")
 local strings = import("strings")
 
+-- The vendored HTML-to-Markdown converter, markdownify (vendor/markdownify/),
+-- which bundles the HTML parser lusoup. micro only loads a plugin's
+-- top-level .lua files, so register their modules with package.preload, so
+-- that require("markdownify") loads them from the plugin directory without
+-- changing package.path.
+local MARKDOWNIFY_DIR = filepath.Join(config.ConfigDir, "plug", "zettle", "vendor", "markdownify")
+for _, module in ipairs({
+	"markdownify",
+	"markdownify.lusoup",
+	"markdownify.lusoup.dom",
+	"markdownify.lusoup.tokenizer",
+	"markdownify.lusoup.treebuilder",
+	"markdownify.lusoup.selector",
+	"markdownify.lusoup.entities",
+	"markdownify.lusoup.entity_table",
+}) do
+	if package.preload[module] == nil then
+		local path = module:gsub("%.", "/")
+		if module == "markdownify" or module == "markdownify.lusoup" then
+			path = path .. "/init"
+		end
+		package.preload[module] = function()
+			return assert(loadfile(filepath.Join(MARKDOWNIFY_DIR, path .. ".lua")))()
+		end
+	end
+end
+
 -- zettle's own modules, in lib/. micro runs every top-level .lua file as part
 -- of the plugin, so they live in a subfolder, and are registered with
 -- package.preload so that require() finds them without changing package.path.
 local LIB_DIR = filepath.Join(config.ConfigDir, "plug", "zettle", "lib")
-for _, name in ipairs({ "util", "media", "clipboard", "paste" }) do
+for _, name in ipairs({ "util", "media", "clipboard", "downloads", "base64", "paste" }) do
 	local module = "zettle." .. name
 	package.loaded[module] = nil -- so that `reload` picks up changes
 	package.preload[module] = function()
@@ -554,6 +581,11 @@ function preinit()
 end
 
 function init()
+	-- convert rich text to Markdown when pasting it with Ctrl-V
+	config.RegisterCommonOption("zettle", "convert-html", true)
+	-- download the media in pasted rich text beside the note
+	config.RegisterCommonOption("zettle", "download-media", false)
+
 	zettleRoot = findVaultRoot()
 	if zettleRoot ~= nil then
 		micro.Log("zettle vault: " .. zettleRoot)

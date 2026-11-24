@@ -1,0 +1,4 @@
+lusoup, bundled from https://github.com/kousu/lusoup (branch speedup), a fork of
+https://github.com/valhalla803/lusoup that implements the HTML5 parsing algorithm.
+
+commit: 8e0d97f01e3e004fcc897d3fb8902c35cae2deb5
